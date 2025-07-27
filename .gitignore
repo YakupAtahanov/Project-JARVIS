@@ -190,8 +190,4 @@ pyrightconfig.json
 .ionide
 
 # Ignore whisper build artifacts and models
-whisper.cpp/build/
-whisper.cpp/bin/
-whisper.cpp/models/
-whisper.cpp/*.exe
-whisper.cpp/*.bin
+whisper.cpp/
