@@ -1,6 +1,13 @@
-# app.py
 from voice_input import SpeechToText
-from config import Config 
+from config import Config
+from voice_output import TextToSpeech
+import os
+import sounddevice as sd
+
+tts = TextToSpeech(
+    model_path="models/piper/en_US-libritts_r-medium.onnx",
+    config_path="models/piper/en_US-libritts_r-medium.onnx.json",
+)
 
 stt = SpeechToText(
     model=Config.STT_MODEL, # tiny/base/small/medium/large
@@ -10,20 +17,18 @@ stt = SpeechToText(
     phrase_timeout=3.0,
     mic_name_substring=None
 )
-
-def manager():
-    try:
-        stt.start()
-        print("Listening... Ctrl+C to stop.\n")
-        for text, is_final in stt.iter_results():
-            if is_final:
-                print(text)
-                
-    except KeyboardInterrupt:
-        pass
-
-    finally:
-        stt.stop()
+# def manager():
+#     try:
+#         stt.start()
+#         print("Listening... Ctrl+C to stop.\n")
+#         for text, is_final in stt.iter_results():
+#             if is_final:
+#                 print(text)
+#     except KeyboardInterrupt:
+#         pass
+#     finally:
+#         stt.stop()
 
 if __name__ == "__main__":
-    manager()
+    pass
+    # manager()
