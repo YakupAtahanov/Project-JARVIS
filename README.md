@@ -8,7 +8,7 @@ Current functionality:
 - Implementing codes in Terminal
 - Reporting back the outputs from the Terminal
 
-**Installation**
+**Installation:**
 
 1. Clone the llm_LLaVA branch
 2. In the root of the project create folders: **models/piper**
@@ -18,3 +18,6 @@ Current functionality:
 6. Run **ollama pull codegemma:7b-instruct-q5_K_M** (or any of your preferred models from https://ollama.com/search)
 7. Create .env file in /jarvis folder and populate it as it is shown in .env.example file in the same folder.
 8. Run main.py
+
+**System requirements:**
+---- To be filled out
