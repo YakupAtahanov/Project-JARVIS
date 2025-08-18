@@ -29,7 +29,7 @@ class LLM:
             messages=self.chat_history
         )["message"]["content"]
 
-        print(response)
+        print(f"LLM Responded:'\n{response}\n----------")
 
         try:
             return json.loads(response)
