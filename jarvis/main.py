@@ -3,20 +3,23 @@ from config import Config
 from voice_output import TextToSpeech
 import os
 import sounddevice as sd
+from terminal_manager import TerminalManager
 
-tts = TextToSpeech(
-    model_path="models/piper/en_US-libritts_r-medium.onnx",
-    config_path="models/piper/en_US-libritts_r-medium.onnx.json",
-)
+tm = TerminalManager()
 
-stt = SpeechToText(
-    model=Config.STT_MODEL, # tiny/base/small/medium/large
-    english_only=True, # False for multilingual
-    energy_threshold=1000,
-    record_timeout=2.0,
-    phrase_timeout=3.0,
-    mic_name_substring=None
-)
+# tts = TextToSpeech(
+#     model_path="models/piper/en_US-libritts_r-medium.onnx",
+#     config_path="models/piper/en_US-libritts_r-medium.onnx.json",
+# )
+
+# stt = SpeechToText(
+#     model=Config.STT_MODEL, # tiny/base/small/medium/large
+#     english_only=True, # False for multilingual
+#     energy_threshold=1000,
+#     record_timeout=2.0,
+#     phrase_timeout=3.0,
+#     mic_name_substring=None
+# )
 # def manager():
 #     try:
 #         stt.start()
@@ -30,5 +33,7 @@ stt = SpeechToText(
 #         stt.stop()
 
 if __name__ == "__main__":
-    pass
+    tm.show_specs()
+    print(tm.run_command("ollama --version"))
+    # print(tm.run_command("pip install --upgrade pip"))
     # manager()
