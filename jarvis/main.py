@@ -17,8 +17,8 @@ class Jarvis:
         )
 
         self.tts = TextToSpeech(
-            model_path="models/piper/en_US-libritts_r-medium.onnx",
-            config_path="models/piper/en_US-libritts_r-medium.onnx.json",
+            model_path=f"models/piper/{Config.TTS_MODEL_ONNX}",
+            config_path=f"models/piper/{Config.TTS_MODEL_JSON}",
         )
 
         self.stt = SpeechToText(

@@ -7,6 +7,9 @@ class Config:
     STT_MODEL = os.getenv("STT_MODEL")
     LLM_MODEL = os.getenv("LLM_MODEL")
 
+    TTS_MODEL_ONNX = os.getenv("TTS_MODEL_ONNX")
+    TTS_MODEL_JSON = os.getenv("TTS_MODEL_JSON")
+
     LLM_WRONG_JSON_FORMAT_MESSAGE = """\
 The JSON text you provided was not valid or properly formatted. 
 Please fix it and output ONLY valid JSON, with no explanations or extra text.
