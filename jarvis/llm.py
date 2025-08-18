@@ -1,6 +1,6 @@
 import ollama
 from config import Config
-from json import loads
+import json
 
 class LLM:
     def __init__(self, system, release, version, machine, shell):
@@ -11,7 +11,7 @@ class LLM:
                         'content': Config.LLM_RULE.format(system=system, release=release, version=version, machine=machine, shell=shell),
                     }
                 ]
-        
+
         # Start preload
         ollama.chat(
             model=Config.LLM_MODEL,
@@ -29,4 +29,10 @@ class LLM:
             messages=self.chat_history
         )["message"]["content"]
 
-        return loads(response)
+        print(response)
+
+        try:
+            return json.loads(response)
+        
+        except json.decoder.JSONDecodeError:
+            return self.ask("The JSON text you provided")

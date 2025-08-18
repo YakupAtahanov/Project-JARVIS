@@ -6,6 +6,23 @@ load_dotenv()
 class Config:
     STT_MODEL = os.getenv("STT_MODEL")
     LLM_MODEL = os.getenv("LLM_MODEL")
+
+    LLM_WRONG_JSON_FORMAT_MESSAGE = """\
+The JSON text you provided was not valid or properly formatted. 
+Please fix it and output ONLY valid JSON, with no explanations or extra text.
+
+The required format is exactly:
+
+{
+  "user_request": "<Conversation|Command>",
+  "output": "<string>"
+}
+
+Here is your previous response:
+<insert the bad JSON here>
+
+Now, return the corrected JSON."""
+
     LLM_RULE = """\
 Below are the specs for the OS:
 * System: {system}
@@ -41,7 +58,6 @@ Note: Provide ONE line of shell code at a time. No multi-line, no comments, no M
 Step 2 - Shell code iterations:
 After the shell runs your code, you will be given the output as:
 {{
-    "command": "<the command you previously output>",
     "ok": true/false,
     "exit_code": <integer>,
     "stdout": "",
