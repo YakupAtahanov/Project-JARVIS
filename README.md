@@ -20,4 +20,29 @@ Current functionality:
 8. Run main.py
 
 **System requirements:**
+
 ---- To be filled out
+
+**How it works:**
+
+---- To be filled out
+
+**Required Improvements:**
+
+1. Response time < 5s (Not considering the Terminal I/O)
+2. Response quality - fine tuning
+   - Remove repetitions
+   - Improve quality of Command/Conversation identification
+   - Look for code tailored AI models (Optional, since codegemma is mostly code tailored)
+3. Cross platform:
+   - Windows (Supported)
+   - Linux (Supported)
+   - MacOS (Tests needed)
+   - Raspberry PI (Not supported)
+4. Scripting
+   - Scripted installation
+   - Docker for crossplatform scripting
+
+**Next project step:**
+
+OS implementation
