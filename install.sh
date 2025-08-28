@@ -5,7 +5,8 @@ set -Eeuo pipefail
 ################################################################################
 # Piper/TTS Dev Setup Helper
 # - Linux + macOS (Apple Silicon/Intel)
-# - Creates venv, installs PyAudio deps, PyTorch (CPU/NVIDIA/AMD), pulls Piper model
+# - Creates a Python virtualenv (via virtualenv), installs PyAudio deps,
+#   PyTorch (CPU/NVIDIA/AMD), pulls a Piper model, sets up .env
 #
 # Flags:
 #   --no-model            Skip Piper model download
@@ -131,18 +132,82 @@ sha256_ok() {
   [[ "$got" == "$want" ]]
 }
 
-create_venv() {
-  if [[ ! -d "$VENV_PATH" ]]; then
-    log "Creating Python venv at $VENV_PATH"
-    # Ensure venv module exists (especially on Debian/Ubuntu)
-    if [[ "$(detect_pkg_mgr)" == "apt" ]] && ! "$PYTHON_BIN" -m venv --help >/dev/null 2>&1; then
-      warn "python3-venv not present; installing…"
-      sudo apt update -y
-      sudo apt install -y python3-venv
+# -----------------------------
+# virtualenv-based environment
+# -----------------------------
+install_virtualenv_pkg() {
+  local mgr="$1" os="$2"
+
+  case "$mgr" in
+    apt)
+      if confirm "Install python3-virtualenv via apt?"; then
+        sudo apt update -y
+        sudo apt install -y python3-virtualenv || sudo apt install -y python-virtualenv
+        return 0
+      fi
+      ;;
+    dnf)
+      if confirm "Install python3-virtualenv via dnf?"; then
+        sudo dnf install -y python3-virtualenv || sudo dnf install -y python-virtualenv
+        return 0
+      fi
+      ;;
+    yum)
+      if confirm "Install python3-virtualenv via yum?"; then
+        sudo yum install -y python3-virtualenv || sudo yum install -y python-virtualenv
+        return 0
+      fi
+      ;;
+    pacman)
+      if confirm "Install python-virtualenv via pacman?"; then
+        sudo pacman -Sy --noconfirm python-virtualenv
+        return 0
+      fi
+      ;;
+  esac
+
+  # macOS (or if package not found on Linux distros)
+  if [[ "$os" == "macos" ]] && have_cmd brew; then
+    if confirm "Install virtualenv via Homebrew?"; then
+      brew install virtualenv && return 0
     fi
-    "$PYTHON_BIN" -m venv "$VENV_PATH"
+  fi
+
+  # As a universal fallback, offer pip install (user-local)
+  if confirm "Install virtualenv via pip (user)?"; then
+    if have_cmd "$PYTHON_BIN"; then
+      "$PYTHON_BIN" -m pip install --user --upgrade virtualenv && return 0
+    fi
+  fi
+
+  return 1
+}
+
+create_venv() {
+  local os mgr
+  os="$(detect_os)"
+  mgr="$(detect_pkg_mgr)"
+
+  if ! have_cmd virtualenv; then
+    warn "virtualenv command not found."
+    install_virtualenv_pkg "$mgr" "$os" || die "virtualenv is required. Aborting."
+    if ! have_cmd virtualenv; then
+      # If installed via pip --user, try to expose ~/.local/bin to PATH for this shell
+      if [[ -d "$HOME/.local/bin" ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+      fi
+    fi
+  fi
+
+  if ! have_cmd virtualenv; then
+    die "virtualenv still not found on PATH after installation attempt."
+  fi
+
+  if [[ ! -d "$VENV_PATH" ]]; then
+    log "Creating Python virtualenv at $VENV_PATH (virtualenv -p '$PYTHON_BIN')"
+    virtualenv -p "$PYTHON_BIN" "$VENV_PATH"
   else
-    log "Using existing venv at $VENV_PATH"
+    log "Using existing virtualenv at $VENV_PATH"
   fi
 
   # shellcheck disable=SC1090
@@ -150,6 +215,9 @@ create_venv() {
   python -m pip install --upgrade pip wheel >/dev/null
 }
 
+# -----------------------------
+# System deps & Python deps
+# -----------------------------
 install_portaudio_deps_unix() {
   local os="$1" mgr
   [[ "$os" == "linux" || "$os" == "macos" ]] || return 0
