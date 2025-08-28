@@ -1,0 +1,253 @@
+def main:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torchmain:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torchmain:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torchmain:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torchmain:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torchmain:
+	python -m venv venv
+
+	mkdir -p models/piper
+
+	# PART FOR DOWNLOAD FROM WEBSITE FOR AN AVAILABLE MODEL
+	# HERE SHOULD BE CODE, BUT I DON'T KNOW WHAT THE COMMANDS WOULD BE. IT IS OPTIONAL, BUT WOULD BE COOL TO HAVE.
+	# IT MUST FOLLOW THIS STEP: 
+	# 	Download .onnx and .onnx.json files from https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+
+	PyAudio_Installation
+
+	pip install pyaudio
+
+	if AMD:
+		Torch_ROCm_GPU_Installation
+	elif Nvidia:
+		Torch_NVidia_GPU_Installation
+	else:
+		Torch_CPU_Installation
+
+	pip install -r requirements.txt
+
+	ollama pull codegemma:7b-instruct-q5_K_M
+
+	# Code here: make .env file which copies content from .env.example (Do it in professional way)
+
+def PyAudio_Installation:
+	if Red Hat: # or any other system that uses the same syntax
+		sudo dnf install portaudio-devel gcc python3-devel
+	elif Debian: # or any other system that uses the same syntax
+		sudo apt install build-essential portaudio19-dev
+	else:
+		pass
+
+def Torch_CPU_Installation:
+	pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+
+def Torch_ROCm_GPU_Installation:
+	pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm6.4/
+
+def Torch_NVidia_GPU_Installation: # DEFAULT
+	pip3 install torch
