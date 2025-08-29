@@ -5,12 +5,13 @@ import json
 class LLM:
     def __init__(self, system, release, version, machine, shell):
         self.llm_model = Config.LLM_MODEL
-        self.chat_history = [
+        self.default_chat = [
                     {
                         'role': 'system',
                         'content': Config.LLM_RULE.format(system=system, release=release, version=version, machine=machine, shell=shell),
                     }
                 ]
+        self.chat_history = list.copy(self.default_chat)
 
         # Start preload
         ollama.chat(
@@ -36,3 +37,6 @@ class LLM:
         
         except json.decoder.JSONDecodeError:
             return self.ask("The JSON text you provided")
+        
+    def reset_history(self):
+        self.chat_history = list.copy(self.default_chat)

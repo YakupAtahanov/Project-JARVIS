@@ -38,6 +38,7 @@ class Jarvis:
                 print(f"Output from terminal:\n{terminal_output}\n----------")
                 response = self.llm.ask(dumps(terminal_output))
 
+        self.llm.reset_history()
         return response
 
     def listen(self):
