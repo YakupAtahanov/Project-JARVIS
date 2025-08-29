@@ -1,4 +1,3 @@
-# realtime_stt.py
 import threading
 import numpy as np
 import torch
