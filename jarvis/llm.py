@@ -13,11 +13,13 @@ class LLM:
                 ]
         self.chat_history = list.copy(self.default_chat)
 
+        print("LLM: Initiating Preload...")
         # Start preload
         ollama.chat(
             model=Config.LLM_MODEL,
             messages=self.chat_history
         )
+        print("LLM: Initiation Complete!")
     
     def ask(self, prompt):
         self.chat_history.append({

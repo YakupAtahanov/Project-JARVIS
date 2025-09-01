@@ -7,7 +7,9 @@ from json import dumps
 
 class Jarvis:
     def __init__(self):
+        print("Initiating Terminal Manager...")
         self.tm = TerminalManager()
+        print("Initiating LLM...")
         self.llm = LLM(
             system=self.tm.system,
             release=self.tm.release,
@@ -16,11 +18,13 @@ class Jarvis:
             shell=self.tm.shell
         )
 
+        print("Initiating TTS...")
         self.tts = TextToSpeech(
             model_path=f"models/piper/{Config.TTS_MODEL_ONNX}",
             config_path=f"models/piper/{Config.TTS_MODEL_JSON}",
         )
 
+        print("Initiating STT...")
         self.stt = SpeechToText(
             model=Config.STT_MODEL, # tiny/base/small/medium/large
             english_only=True, # False for multilingual
@@ -29,6 +33,7 @@ class Jarvis:
             phrase_timeout=3.0,
             mic_name_substring=None
         )
+        print("Initiations Complete!")
 
     def ask(self, prompt):
         response = self.llm.ask(prompt)

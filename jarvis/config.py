@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+# import multiprocessing
 import os
 
 load_dotenv()
@@ -9,6 +10,9 @@ class Config:
 
     TTS_MODEL_ONNX = os.getenv("TTS_MODEL_ONNX")
     TTS_MODEL_JSON = os.getenv("TTS_MODEL_JSON")
+
+    # os.environ["OLLAMA_NO_GPU"] = "1"
+    # os.environ["OLLAMA_NUM_THREADS"] = str(multiprocessing.cpu_count())
 
     LLM_WRONG_JSON_FORMAT_MESSAGE = """\
 The JSON text you provided was not valid or properly formatted. 

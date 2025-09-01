@@ -18,7 +18,7 @@ class TerminalManager:
             else:
                 self.shell = ["cmd.exe", "/d", "/s", "/c"]
         else:
-            # Linux / macOS
+            # Linux / macOS / Raspberry pi
             if shutil.which("bash"):
                 self.shell = ["bash", "-lc"]
             else:
