@@ -1,8 +1,8 @@
-from voice_input import SpeechToText
-from config import Config
-from voice_output import TextToSpeech
-from llm import LLM
-from supermcp_client import SuperMCPWrapper
+from .voice_input import SpeechToText
+from .config import Config
+from .voice_output import TextToSpeech
+from .llm import LLM
+from .supermcp_client import SuperMCPWrapper
 from json import dumps
 import platform
 import shutil
