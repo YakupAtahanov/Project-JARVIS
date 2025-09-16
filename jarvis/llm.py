@@ -38,7 +38,7 @@ class LLM:
             return json.loads(response)
         
         except json.decoder.JSONDecodeError:
-            return self.ask("The JSON text you provided")
+            return self.ask(Config.LLM_WRONG_JSON_FORMAT_MESSAGE)
         
     def reset_history(self):
         self.chat_history = list.copy(self.default_chat)
