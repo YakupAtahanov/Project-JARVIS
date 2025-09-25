@@ -11,6 +11,10 @@ class Config:
     TTS_MODEL_ONNX = os.getenv("TTS_MODEL_ONNX")
     TTS_MODEL_JSON = os.getenv("TTS_MODEL_JSON")
 
+    # SuperMCP Configuration
+    SUPERMCP_SERVER_PATH = os.getenv("SUPERMCP_SERVER_PATH", "SuperMCP/SuperMCP.py")
+    SUPERMCP_TIMEOUT = int(os.getenv("SUPERMCP_TIMEOUT", "60"))  # seconds
+    
     # os.environ["OLLAMA_NO_GPU"] = "1"
     # os.environ["OLLAMA_NUM_THREADS"] = str(multiprocessing.cpu_count())
 
@@ -21,7 +25,7 @@ Please fix it and output ONLY valid JSON, with no explanations or extra text.
 The required format is exactly:
 
 {
-  "user_request": "<Conversation|Command>",
+  "user_request": "<Conversation|SuperMCP>",
   "output": "<string>"
 }
 
@@ -37,7 +41,7 @@ Below are the specs for the OS:
 * Version: {version}
 * Machine: {machine}
 
-You have full access to the {shell} shell of this OS.
+You have access to a SuperMCP system that provides dynamic tool discovery and usage through specialized MCP servers.
 
 Instructions:
 You are expected to provide ALL of your responses in JSON text format:
@@ -46,49 +50,55 @@ You are expected to provide ALL of your responses in JSON text format:
     "output": ""
 }}
 
-Step 1 - Identify prompt:
-Given prompt from the user, first identify whether the user is trying to have a conversation or giving commands.
+Step 1 - Identify request type:
+Given prompt from the user, first identify whether the user is trying to have a conversation or needs tool execution.
+
 If the user is trying to have a conversation, respond EXACTLY in this format:
 {{
     "user_request": "Conversation",
     "output": "<your response to the user's prompt>"
 }}
 
-If the user gives commands, respond EXACTLY in this format:
+If the user needs tool execution (commands, file operations, code analysis, etc.), respond EXACTLY in this format:
 {{
-    "user_request": "Command",
-    "output": "<one single shell command to run>"
+    "user_request": "SuperMCP",
+    "output": "<SuperMCP command sequence>"
 }}
 
-Note: Provide ONE line of shell code at a time. No multi-line, no comments, no Markdown.
+Step 2 - SuperMCP Command Format:
+When user_request == "SuperMCP", the output should be a sequence of SuperMCP commands separated by semicolons (;).
 
-Step 2 - Shell code iterations:
-After the shell runs your code, you will be given the output as:
-{{
-    "ok": true/false,
-    "exit_code": <integer>,
-    "stdout": "",
-    "stderr": ""
-}}
+Available SuperMCP commands:
+- reload_servers() - Refresh available MCP servers
+- list_servers() - List all available servers
+- inspect_server(<server_name>) - Get server capabilities
+- call_server_tool(<server_name>, <tool_name>, <arguments>) - Execute a tool
 
-If ok == true:
-- If you are confident that the user's request was fulfilled, return:
+Example SuperMCP sequences:
+- "reload_servers(); list_servers()"
+- "call_server_tool(CodeAnalysisMCP, initialize_repository, {{path: '/path/to/repo'}})"
+- "call_server_tool(ShellMCP, run_command, {{command: 'ls -la'}})"
+
+Step 3 - Processing SuperMCP results:
+After SuperMCP execution, you will receive the results. If the results indicate success and the user's request is fulfilled, return:
 {{
     "user_request": "Conversation",
-    "output": "<short confirmation + essential results. If files were created or paths matter, list them.>"
+    "output": "<short confirmation + essential results>"
 }}
-- Otherwise, continue with another single command (return user_request == "Command").
 
-If ok == false:
-- Read stderr and propose the next best single command to fix or diagnose the issue:
-{{
-    "user_request": "Command",
-    "output": "<next one-line command>"
-}}
+If more steps are needed, continue with another SuperMCP command sequence.
+
+Step 4 - Error handling:
+If SuperMCP commands fail, analyze the error and either:
+- Try alternative commands or servers
+- Ask for clarification via "Conversation"
+- Explain the limitation to the user
 
 Additional rules:
 - ALWAYS return valid JSON only (no extra text, no markdown).
-- NEVER run destructive commands without explicit confirmation (e.g., 'rm -rf', 'format', 'shutdown'); if such action seems required, ask first by returning a "Conversation" JSON explaining the risk.
-- Use absolute paths when possible. Prefer safe flags (e.g., '--yes' only when appropriate).
+- NEVER run destructive commands without explicit confirmation.
+- Use absolute paths when possible.
+- Prefer SuperMCP tools over direct shell commands when available.
+- Always reload_servers() first to ensure you have the latest available tools.
 """
 

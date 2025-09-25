@@ -1,54 +1,65 @@
 # Project JARVIS
 
-**AI-Native CLI (Prototype)**
+**AI-Native Voice Assistant with Dynamic Capability Discovery**
 
-Project JARVIS is an experimental AI-powered command-line interface designed to converse with the user, execute commands in the terminal, and report outputs back in real time.
+Project JARVIS is an innovative AI-powered voice assistant that combines natural language processing with dynamic tool discovery through SuperMCP (Super Model Context Protocol) orchestration. It can understand spoken commands, discover available tools dynamically, and execute them through specialized MCP servers.
 
 ---
 
-## ✨ Current Functionality
+## ✨ Revolutionary Features
 
-- Interactive conversation with the user  
-- Execution of commands directly in the terminal  
-- Reporting terminal outputs back to the user  
+- **🎤 Voice-First Interface**: Real-time speech recognition and synthesis
+- **🧠 AI-Driven Tool Discovery**: Automatically discovers and uses available MCP servers
+- **🔧 Dynamic Capability Extension**: Add new tools without code changes
+- **🛡️ Secure Local Processing**: All operations run locally for privacy
+- **🌐 Cross-Platform Support**: Windows, Linux, macOS compatibility
+- **⚡ Self-Extending AI**: Can create new MCP servers on demand  
 
 ---
 
 ## ⚡ Installation
 
-1. **Clone the repository** (use the `main` branch).
+1. **Clone the repository with SuperMCP submodule**:
    ```bash
-   git clone -b main (https://github.com/YakupAtahanov/Project-JARVIS.git)
+   git clone --recursive https://github.com/YakupAtahanov/Project-JARVIS.git
    cd Project-JARVIS
    ```
+
 2. **Create required folders**:
    ```bash
    mkdir -p models/piper
    ```
+
 3. **Download a Piper TTS model**:
    - Get both `.onnx` and `.onnx.json` files from [Piper samples](https://rhasspy.github.io/piper-samples/).  
    - Place them in `models/piper`.  
    - Example: [en_US-libritts_r-medium](https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium).  
-4. **Create and activate a virtual environment** (if not already present):
+
+4. **Create and activate a virtual environment**:
    ```bash
    python -m venv venv
    source venv/bin/activate   # Linux/MacOS
    venv\Scripts\activate      # Windows
    ```
+
 5. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-6. **Pull an LLM via Ollama** (example: `codegemma:7b-instruct-q5_K_M`):
+
+6. **Install Ollama and pull an LLM model**:
    ```bash
+   # Install Ollama from https://ollama.com/
    ollama pull codegemma:7b-instruct-q5_K_M
    ```
-   (See [Ollama models](https://ollama.com/search) for alternatives.)
+
 7. **Configure environment variables**:  
-   - Create a `.env` file in the `/jarvis` folder.  
-   - Populate it using `.env.example` as a template.  
-8. **Run the application**:  
+   - Copy `jarvis/config.env.template` to `jarvis/.env`
+   - Adjust settings as needed for your system
+
+8. **Run JARVIS**:  
    ```bash
+   cd jarvis
    python main.py
    ```
 
@@ -69,44 +80,60 @@ Project JARVIS is an experimental AI-powered command-line interface designed to 
 
 ## 🔧 How It Works
 
-1. **User Input**: The user types a message or request into the CLI.
-2. **LLM Processing**: The input is passed to a Large Language Model (via Ollama).
-3. **Command Handling**:
-   - If the LLM detects a terminal command, it executes it.
-   - If it detects a conversational query, it responds directly.
-4. **Output Reporting**:
-   - Command results are captured and displayed in the CLI.
-   - Optionally, Piper generates speech output using the selected TTS model.
+1. **🎤 Voice Input**: User speaks into microphone, Whisper converts speech to text
+2. **🧠 AI Processing**: LLM (via Ollama) analyzes the request and determines required tools
+3. **🔍 Dynamic Discovery**: SuperMCP discovers available MCP servers and their capabilities
+4. **⚡ Tool Execution**: Appropriate MCP servers execute the requested operations
+5. **🔊 Voice Output**: Piper TTS converts the response back to speech
 
-**Architecture overview**:
+**Revolutionary Architecture**:
 ```
-User → CLI → LLM (Ollama) → Command Execution → Output → (Piper TTS) → User
+User Voice → Whisper (STT) → LLM → SuperMCP → MCP Servers → Response → Piper (TTS) → User
 ```
+
+### **Available MCP Servers**
+- **ShellMCP**: Terminal command execution
+- **CodeAnalysisMCP**: Code repository analysis and file operations
+- **EchoMCP**: Testing and validation
+- **FileSystemMCP**: Advanced file system operations
+- **[Extensible]**: Add custom MCP servers dynamically
 
 ---
 
-## 🚀 Roadmap / Required Improvements
+## 🚀 Innovation & Future Vision
 
-1. **Performance**
-   - Reduce response time to under 5s (excluding terminal I/O).
-2. **Response Quality**
-   - Eliminate repetitive outputs.
-   - Improve detection of commands vs. conversations.
-   - Investigate fine-tuning with code-specialized datasets.
-3. **Cross-Platform Support**
-   - ✅ Windows
-   - ✅ Linux
-   - ⚠️ MacOS (needs testing)
-   - ⚠️ Raspberry Pi (needs testing)
-4. **Scripting / Deployment**
-   - Automated installation scripts.
-   - Dockerized environment for portability.
+### **Current Capabilities**
+- ✅ **Voice-First AI Assistant**: Real-time speech processing
+- ✅ **Dynamic Tool Discovery**: SuperMCP orchestration
+- ✅ **Local Privacy**: All processing on-device
+- ✅ **Cross-Platform**: Windows, Linux, macOS support
+- ✅ **Extensible Architecture**: Plugin-based MCP servers
+
+### **Revolutionary Features in Development**
+- 🔄 **AI-Driven MCP Generation**: AI creates new tools on demand
+- 🧠 **Intelligent Server Routing**: Automatic tool selection
+- 🌐 **MCP Registry Integration**: Access to ecosystem of tools
+- 🔒 **Enhanced Security**: Sandboxed execution environments
+- 📊 **Performance Analytics**: Usage tracking and optimization
+
+### **Future Applications**
+- **🏠 Smart Home Integration**: Voice-controlled IoT devices
+- **💼 Enterprise Automation**: Business process automation
+- **🎓 Educational Tools**: Interactive learning assistants
+- **🔬 Research Platform**: Scientific computation and analysis
+- **🎨 Creative Workflows**: Content creation and design
 
 ---
 
-## 🛠️ Next Steps
+## 🏆 Why This Matters
 
-- Deeper OS-level integration (system services, background mode, etc.).
-- Potential support for lightweight devices once performance optimizations are complete.
+JARVIS represents a **paradigm shift** in AI assistant technology:
+
+- **🎯 True Intelligence**: Not just command execution, but dynamic capability discovery
+- **🔧 Self-Extending**: Grows its own capabilities based on user needs
+- **🛡️ Privacy-First**: Local processing ensures data never leaves your device
+- **🌱 Open Ecosystem**: Community-driven tool development and sharing
+
+This is the future of human-computer interaction - **AI that truly understands and adapts**.
 
 ---
