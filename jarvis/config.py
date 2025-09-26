@@ -5,7 +5,8 @@ import os
 load_dotenv()
 
 class Config:
-    STT_MODEL = os.getenv("STT_MODEL")
+    # Vosk STT Configuration
+    VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "vosk-model-small-en-us-0.15")
     LLM_MODEL = os.getenv("LLM_MODEL")
 
     TTS_MODEL_ONNX = os.getenv("TTS_MODEL_ONNX")

@@ -30,12 +30,12 @@ class Jarvis:
 
         print("Initiating STT...")
         self.stt = SpeechToText(
-            model=Config.STT_MODEL, # tiny/base/small/medium/large
-            english_only=True, # False for multilingual
-            energy_threshold=1000,
-            record_timeout=2.0,
+            model_path=Config.VOSK_MODEL_PATH,  # Vosk model path
+            sample_rate=16000,
+            chunk_size=4000,
             phrase_timeout=3.0,
-            mic_name_substring=None
+            silence_timeout=1.0,
+            device_index=None  # Use default audio device
         )
         print("Initiations Complete!")
 
