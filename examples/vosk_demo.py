@@ -49,9 +49,9 @@ class VoskWakeWordDetector:
                 self.model = vosk.Model(self.model_path)
             else:
                 # Try to use a small model (you'll need to download this)
-                print("⚠️  No model path provided. You need to download a Vosk model.")
-                print("💡 Download from: https://alphacephei.com/vosk/models")
-                print("💡 Example: wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
+                print("\tNo model path provided. You need to download a Vosk model.")
+                print("\tDownload from: https://alphacephei.com/vosk/models")
+                print("\tExample: wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
                 return False
             
             self.recognizer = vosk.KaldiRecognizer(self.model, 16000)
@@ -66,11 +66,11 @@ class VoskWakeWordDetector:
                 frames_per_buffer=8000
             )
             
-            print("✅ Vosk wake word detector initialized successfully!")
+            print("\tVosk wake word detector initialized successfully!")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to initialize Vosk: {e}")
+            print(f"\tFailed to initialize Vosk: {e}")
             return False
     
     def start_listening(self):
@@ -79,8 +79,8 @@ class VoskWakeWordDetector:
             return False
             
         self.running = True
-        print("👂 Listening for wake words...")
-        print(f"🎯 Wake words: {', '.join(self.wake_words)}")
+        print("\tListening for wake words...")
+        print(f"\tWake words: {', '.join(self.wake_words)}")
         print("Press Ctrl+C to stop.\n")
         
         try:
@@ -92,15 +92,15 @@ class VoskWakeWordDetector:
                     text = result.get('text', '').lower().strip()
                     
                     if text:
-                        print(f"📝 Recognized: '{text}'")
+                        print(f"\tRecognized: '{text}'")
                         
                         # Check if any wake word is in the recognized text
                         for wake_word in self.wake_words:
                             if wake_word in text:
-                                print(f"🎯 WAKE WORD DETECTED: '{wake_word}'")
-                                print(f"   Full text: '{text}'")
-                                print(f"   Time: {time.strftime('%H:%M:%S')}")
-                                print("   → This is where you'd start your voice processing pipeline\n")
+                                print(f"\tWAKE WORD DETECTED: '{wake_word}'")
+                                print(f"\tFull text: '{text}'")
+                                print(f"\tTime: {time.strftime('%H:%M:%S')}")
+                                print("\t-> This is where you'd start your voice processing pipeline\n")
                                 
                                 # Queue the detection
                                 self.detection_queue.put({
@@ -114,12 +114,12 @@ class VoskWakeWordDetector:
                     partial = json.loads(self.recognizer.PartialResult())
                     partial_text = partial.get('partial', '').lower().strip()
                     if partial_text:
-                        print(f"🔄 Partial: '{partial_text}'", end='\r')
+                        print(f"Partial: '{partial_text}'", end='\r')
                         
         except KeyboardInterrupt:
-            print("\n👋 Stopping...")
+            print("\nStopping...")
         except Exception as e:
-            print(f"❌ Error during listening: {e}")
+            print(f"ERROR: failure during listening: {e}")
         finally:
             self.stop_listening()
     
@@ -133,7 +133,7 @@ class VoskWakeWordDetector:
         if self.audio:
             self.audio.terminate()
         
-        print("🔇 Listening stopped")
+        print("Listening stopped")
     
     def get_detection(self, timeout=None):
         """Get the next wake word detection."""
@@ -147,22 +147,17 @@ def main():
     print("🎤 Vosk Wake Word Detection Demo")
     print("=" * 50)
     
-    # You need to download a Vosk model first
-    # Download from: https://alphacephei.com/vosk/models
-    # Example: wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-    # Then unzip it and provide the path
-    
     model_path = "vosk-model-small-en-us-0.15"  # Set this to your model path
     
     if not model_path:
-        print("❌ No model path provided!")
-        print("\n📥 To get started:")
-        print("1. Download a Vosk model:")
-        print("   wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
-        print("2. Unzip it:")
-        print("   unzip vosk-model-small-en-us-0.15.zip")
-        print("3. Update the model_path in this script")
-        print("4. Run the demo again")
+        print("No model path provided")
+        print("\nTo get started:")
+        print("1) Download a Vosk model:")
+        print("\twget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
+        print("2) Unzip it:")
+        print("\tunzip vosk-model-small-en-us-0.15.zip")
+        print("3) Update the model_path in this script")
+        print("4) Run the demo again")
         return
     
     # Create detector
@@ -176,10 +171,10 @@ def main():
         detector.start_listening()
         
     except KeyboardInterrupt:
-        print("\n👋 Demo interrupted by user")
+        print("\nDemo interrupted by user")
     finally:
         detector.stop_listening()
-        print("✅ Demo completed")
+        print("Demo completed")
 
 if __name__ == "__main__":
     main()
