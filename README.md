@@ -2,18 +2,20 @@
 
 **AI-Native Voice Assistant with Dynamic Capability Discovery**
 
-Project JARVIS is an innovative AI-powered voice assistant that combines natural language processing with dynamic tool discovery through SuperMCP (Super Model Context Protocol) orchestration. It can understand spoken commands, discover available tools dynamically, and execute them through specialized MCP servers.
+Project JARVIS is an innovative AI-powered voice assistant that combines natural language processing with dynamic tool discovery through SuperMCP (Super Model Context Protocol) orchestration. Featuring always-listening wake word detection, it can understand spoken commands, discover available tools dynamically, and execute them through specialized MCP servers - all while maintaining complete privacy through local processing.
 
 ---
 
 ## ✨ Revolutionary Features
 
 - **🎤 Voice-First Interface**: Real-time speech recognition and synthesis
+- **👂 Wake Word Detection**: Always-listening voice activation with customizable wake words ("Jarvis", "Hey Jarvis", etc.)
 - **🧠 AI-Driven Tool Discovery**: Automatically discovers and uses available MCP servers
 - **🔧 Dynamic Capability Extension**: Add new tools without code changes
 - **🛡️ Secure Local Processing**: All operations run locally for privacy
 - **🌐 Cross-Platform Support**: Windows, Linux, macOS compatibility
-- **⚡ Self-Extending AI**: Can create new MCP servers on demand  
+- **⚡ Self-Extending AI**: Can create new MCP servers on demand
+- **🎯 Smart Audio Management**: Automatically switches between wake word detection and command processing  
 
 ---
 
@@ -65,6 +67,48 @@ Project JARVIS is an innovative AI-powered voice assistant that combines natural
 
 ---
 
+## 🎤 Voice Activation Configuration
+
+JARVIS features advanced voice activation capabilities with customizable wake words and sensitivity settings.
+
+### **Configuration Options**
+
+Edit `jarvis/.env` to customize voice activation:
+
+```bash
+# Wake words (comma-separated)
+WAKE_WORDS=jarvis,hey jarvis,okay jarvis
+
+# Voice activation sensitivity (0.0 to 1.0)
+VOICE_ACTIVATION_SENSITIVITY=0.8
+
+# Vosk model path
+VOSK_MODEL_PATH=models/vosk-model-small-en-us-0.15
+```
+
+### **Voice Activation Features**
+
+- **🎯 Customizable Wake Words**: Set any wake words you prefer
+- **🔊 Sensitivity Control**: Adjust detection sensitivity for your environment
+- **⚡ Real-time Detection**: Uses Vosk for fast, accurate wake word recognition
+- **🔄 Smart Switching**: Automatically switches between listening modes
+- **📊 Detection Statistics**: Track wake word detection performance
+- **🛡️ Privacy-First**: All processing happens locally on your device
+
+### **Usage Modes**
+
+**Voice Activation Mode (Default)**:
+- Always listens for wake words
+- Responds only when activated
+- Energy efficient and privacy-focused
+
+**Continuous Listening Mode**:
+- Constantly processes speech
+- No wake word required
+- Higher resource usage
+
+---
+
 ## 🖥️ System Requirements
 
 - **Python**: 3.10 or later
@@ -80,7 +124,18 @@ Project JARVIS is an innovative AI-powered voice assistant that combines natural
 
 ## 🔧 How It Works
 
-1. **🎤 Voice Input**: User speaks into microphone, Whisper converts speech to text
+### **Voice Activation Mode (Default)**
+1. **👂 Always Listening**: Continuously monitors for wake words ("Jarvis", "Hey Jarvis", etc.)
+2. **🎯 Wake Word Detection**: Vosk-based real-time wake word recognition
+3. **🎤 Voice Input**: After wake word, switches to command processing mode
+4. **🧠 AI Processing**: LLM (via Ollama) analyzes the request and determines required tools
+5. **🔍 Dynamic Discovery**: SuperMCP discovers available MCP servers and their capabilities
+6. **⚡ Tool Execution**: Appropriate MCP servers execute the requested operations
+7. **🔊 Voice Output**: Piper TTS converts the response back to speech
+8. **🔄 Return to Listening**: Automatically returns to wake word detection mode
+
+### **Legacy Continuous Mode**
+1. **🎤 Voice Input**: User speaks into microphone, Vosk converts speech to text
 2. **🧠 AI Processing**: LLM (via Ollama) analyzes the request and determines required tools
 3. **🔍 Dynamic Discovery**: SuperMCP discovers available MCP servers and their capabilities
 4. **⚡ Tool Execution**: Appropriate MCP servers execute the requested operations
@@ -88,7 +143,7 @@ Project JARVIS is an innovative AI-powered voice assistant that combines natural
 
 **Revolutionary Architecture**:
 ```
-User Voice → Whisper (STT) → LLM → SuperMCP → MCP Servers → Response → Piper (TTS) → User
+Wake Word → Voice Activation → STT → LLM → SuperMCP → MCP Servers → Response → TTS → Return to Listening
 ```
 
 ### **Available MCP Servers**
@@ -104,10 +159,13 @@ User Voice → Whisper (STT) → LLM → SuperMCP → MCP Servers → Response �
 
 ### **Current Capabilities**
 - ✅ **Voice-First AI Assistant**: Real-time speech processing
+- ✅ **Wake Word Detection**: Always-listening voice activation system
 - ✅ **Dynamic Tool Discovery**: SuperMCP orchestration
 - ✅ **Local Privacy**: All processing on-device
 - ✅ **Cross-Platform**: Windows, Linux, macOS support
 - ✅ **Extensible Architecture**: Plugin-based MCP servers
+- ✅ **Smart Audio Management**: Automatic mode switching
+- ✅ **Customizable Wake Words**: User-defined activation phrases
 
 ### **Revolutionary Features in Development**
 - 🔄 **AI-Driven MCP Generation**: AI creates new tools on demand

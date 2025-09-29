@@ -147,7 +147,7 @@ def main():
     print("🎤 Vosk Wake Word Detection Demo")
     print("=" * 50)
     
-    model_path = "vosk-model-small-en-us-0.15"  # Set this to your model path
+    model_path = "models/vosk-model-small-en-us-0.15"  # Set this to your model path
     
     if not model_path:
         print("No model path provided")

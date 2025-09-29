@@ -80,7 +80,7 @@ class VoiceActivation:
             self._model = self.vosk.Model(self.model_path)
             self._recognizer = self.vosk.KaldiRecognizer(self._model, self.sample_rate)
             
-            print(f"🎤 Voice Activation initialized:")
+            print(f"Voice Activation initialized:")
             print(f"   Wake words: {', '.join(self.wake_words)}")
             print(f"   Sample rate: {self.sample_rate} Hz")
             print(f"   Chunk size: {self.chunk_size} samples")
@@ -89,7 +89,7 @@ class VoiceActivation:
             return True
             
         except Exception as e:
-            print(f"❌ Failed to initialize voice activation: {e}")
+            print(f"Failed to initialize voice activation: {e}")
             return False
     
     def start_listening(self) -> bool:
@@ -129,11 +129,11 @@ class VoiceActivation:
             )
             self._listening_thread.start()
             
-            print("👂 Voice activation listening started")
+            print("Voice activation listening started")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to start listening: {e}")
+            print(f"Failed to start listening: {e}")
             self.stop_listening()
             return False
     
@@ -165,7 +165,7 @@ class VoiceActivation:
                 pass
             self._audio = None
         
-        print("🔇 Voice activation stopped")
+        print("Voice activation stopped")
     
     def _listen_loop(self) -> None:
         """Main listening loop running in separate thread."""
@@ -190,7 +190,7 @@ class VoiceActivation:
                         self._check_for_wake_word(partial_text)
                         
         except Exception as e:
-            print(f"❌ Error in listening loop: {e}")
+            print(f"Error in listening loop: {e}")
         finally:
             self._running.clear()
     
@@ -315,9 +315,11 @@ if __name__ == "__main__":
                     print(f"Stats: {stats['detection_count']} detections")
                     
     except KeyboardInterrupt:
-        print("\n👋 Shutting down...")
+        print("\nShutting down...")
     finally:
         va.cleanup()
         print("Cleanup completed")
+
+
 
 
