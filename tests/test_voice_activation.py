@@ -8,8 +8,9 @@ the full JARVIS system.
 
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'jarvis'))
 
+# Import directly from the voice_activation module to avoid dependency issues
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 from voice_activation import VoiceActivation
 import time
 
@@ -23,9 +24,11 @@ def main():
         print("   → This is where JARVIS would start processing your command")
     
     # Create voice activation instance
+    project_root = os.path.join(os.path.dirname(__file__), '..')
+    model_path = os.path.join(project_root, 'models', 'vosk-model-small-en-us-0.15')
     va = VoiceActivation(
         wake_words=["jarvis", "hey jarvis", "okay jarvis"],
-        model_path="vosk-model-small-en-us-0.15",
+        model_path=model_path,
         sample_rate=16000,
         chunk_size=4000,
         sensitivity=0.8,
@@ -57,3 +60,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
