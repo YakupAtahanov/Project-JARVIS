@@ -1,20 +1,17 @@
 import threading
-import numpy as np
-import torch
-import whisper
-import speech_recognition as sr
-
+import json
+import pyaudio
+import vosk
 from queue import Queue, Empty
 from datetime import datetime, timedelta
 from typing import Callable, Generator, Optional, Tuple
 
 class SpeechToText:
     """
-    Real-time, offline speech-to-text using SpeechRecognition for mic capture
-    and openai-whisper for transcription.
+    Real-time, offline speech-to-text using Vosk for fast, accurate transcription.
 
     Usage:
-        stt = SpeechToText(model="base", english_only=True)
+        stt = SpeechToText(model_path="vosk-model-small-en-us-0.15")
         stt.start()
         try:
             for text, is_final in stt.iter_results():
@@ -25,132 +22,155 @@ class SpeechToText:
 
     def __init__(
         self,
-        model: str = "base",
-        english_only: bool = True,
-        energy_threshold: int = 1000,
-        record_timeout: float = 2.0,
-        phrase_timeout: float = 3.0,
+        model_path: str = "vosk-model-small-en-us-0.15",
         sample_rate: int = 16000,
-        mic_name_substring: Optional[str] = None,  # None = default device
-        adjust_ambient_seconds: float = 0.5,
-        enable_fp16_if_cuda: bool = True,
+        chunk_size: int = 4000,
+        phrase_timeout: float = 3.0,
+        silence_timeout: float = 1.0,
+        device_index: Optional[int] = None,
     ):
-        self.model_name = model + (".en" if (english_only and model != "large") else "")
-        self.energy_threshold = energy_threshold
-        self.record_timeout = float(record_timeout)
-        self.phrase_timeout = float(phrase_timeout)
-        self.sample_rate = int(sample_rate)
-        self.mic_name_substring = mic_name_substring
-        self.adjust_ambient_seconds = adjust_ambient_seconds
-        self.fp16 = (enable_fp16_if_cuda and torch.cuda.is_available())
+        """
+        Initialize Vosk-based speech-to-text.
+        
+        Args:
+            model_path: Path to Vosk model directory
+            sample_rate: Audio sample rate (must match model)
+            chunk_size: Audio chunk size for processing
+            phrase_timeout: Timeout for phrase completion
+            silence_timeout: Timeout for silence detection
+            device_index: Audio device index (None for default)
+        """
+        self.model_path = model_path
+        self.sample_rate = sample_rate
+        self.chunk_size = chunk_size
+        self.phrase_timeout = phrase_timeout
+        self.silence_timeout = silence_timeout
+        self.device_index = device_index
 
         # I/O queues
-        self._audio_q: Queue[bytes] = Queue()        # raw audio from SR callback
         self._result_q: Queue[Tuple[str, bool]] = Queue()  # (text, is_final)
 
-        # SR + mic state
-        self._recognizer = sr.Recognizer()
-        self._recognizer.energy_threshold = self.energy_threshold
-        self._recognizer.dynamic_energy_threshold = False
-        self._mic: Optional[sr.Microphone] = None
-        self._stop_listening = None  # SR's returned stopper
-
-        # Whisper model
-        self._wmodel = None
+        # Vosk components
+        self._model: Optional[vosk.Model] = None
+        self._recognizer: Optional[vosk.KaldiRecognizer] = None
+        
+        # PyAudio components
+        self._audio: Optional[pyaudio.PyAudio] = None
+        self._stream: Optional[pyaudio.Stream] = None
 
         # Processing thread state
         self._worker_thread: Optional[threading.Thread] = None
         self._running = threading.Event()
 
         # Transcription state
-        self._phrase_time: Optional[datetime] = None
-        self._phrase_bytes = bytearray()
+        self._last_speech_time: Optional[datetime] = None
         self._last_emitted_text = ""  # for coalescing partials
+        self._current_phrase = ""
 
         # Optional callback for push updates
         self._on_update: Optional[Callable[[str, bool], None]] = None
 
     @staticmethod
-    def list_microphones() -> None:
-        print("Available microphone devices:")
-        for idx, name in enumerate(sr.Microphone.list_microphone_names()):
-            print(f"[{idx}] {name}")
-
-    def _pick_microphone(self) -> sr.Microphone:
-        if self.mic_name_substring:
-            for idx, name in enumerate(sr.Microphone.list_microphone_names()):
-                if self.mic_name_substring.lower() in (name or "").lower():
-                    return sr.Microphone(sample_rate=self.sample_rate, device_index=idx)
-            raise RuntimeError(f"Microphone containing '{self.mic_name_substring}' not found.")
-        return sr.Microphone(sample_rate=self.sample_rate)
+    def list_audio_devices() -> None:
+        """List available audio input devices."""
+        audio = pyaudio.PyAudio()
+        print("Available audio input devices:")
+        for i in range(audio.get_device_count()):
+            info = audio.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0:
+                print(f"[{i}] {info['name']} (channels: {info['maxInputChannels']})")
+        audio.terminate()
 
     def on_update(self, cb: Callable[[str, bool], None]) -> None:
         """Register a callback called as `cb(text, is_final)`."""
         self._on_update = cb
 
     def start(self) -> None:
-        """Load model, open mic, start background capture and processing."""
+        """Load model, open mic, start background processing."""
         if self._running.is_set():
             return
-        # Load whisper
-        self._wmodel = whisper.load_model(self.model_name)
+            
+        try:
+            # Load Vosk model
+            print(f"Loading Vosk model from: {self.model_path}")
+            self._model = vosk.Model(self.model_path)
+            self._recognizer = vosk.KaldiRecognizer(self._model, self.sample_rate)
+            print("✅ Vosk model loaded successfully")
 
-        # Mic
-        self._mic = self._pick_microphone()
-        with self._mic as source:
-            # Quick ambient calibration to keep VAD sane
-            self._recognizer.adjust_for_ambient_noise(source, duration=self.adjust_ambient_seconds)
+            # Initialize PyAudio
+            self._audio = pyaudio.PyAudio()
+            
+            # Build stream parameters
+            stream_params = {
+                'format': pyaudio.paInt16,
+                'channels': 1,
+                'rate': self.sample_rate,
+                'input': True,
+                'frames_per_buffer': self.chunk_size
+            }
+            
+            # Add device_index only if specified
+            if self.device_index is not None:
+                stream_params['input_device_index'] = self.device_index
+            
+            self._stream = self._audio.open(**stream_params)
+            print("✅ Audio stream initialized")
 
-        # Background capture -> _audio_q
-        def _record_cb(_, audio: sr.AudioData):
-            try:
-                data = audio.get_raw_data()
-                self._audio_q.put_nowait(data)
-            except Exception:
-                pass
+            # Start processing thread
+            self._running.set()
+            self._worker_thread = threading.Thread(target=self._process_loop, daemon=True)
+            self._worker_thread.start()
+            print("✅ Speech-to-text processing started")
 
-        self._stop_listening = self._recognizer.listen_in_background(
-            self._mic, _record_cb, phrase_time_limit=self.record_timeout
-        )
-
-        # Worker thread: consumes _audio_q, runs Whisper, pushes (text, is_final) to _result_q
-        self._running.set()
-        self._worker_thread = threading.Thread(target=self._process_loop, daemon=True)
-        self._worker_thread.start()
+        except Exception as e:
+            print(f"❌ Failed to start speech-to-text: {e}")
+            self.stop()
+            raise
 
     def stop(self) -> None:
-        """Stop capture and processing, free model."""
+        """Stop processing and cleanup resources."""
         if not self._running.is_set():
             return
+            
         self._running.clear()
 
-        if self._stop_listening:
-            try:
-                self._stop_listening(wait_for_stop=False)
-            except Exception:
-                pass
-            self._stop_listening = None
-
+        # Wait for thread to finish
         if self._worker_thread:
             self._worker_thread.join(timeout=2.0)
             self._worker_thread = None
 
-        # Close mic
-        self._mic = None
+        # Close audio stream
+        if self._stream:
+            try:
+                self._stream.stop_stream()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
 
-        # Release model
-        self._wmodel = None
+        if self._audio:
+            try:
+                self._audio.terminate()
+            except Exception:
+                pass
+            self._audio = None
+
+        # Release Vosk model
+        self._recognizer = None
+        self._model = None
 
         # Drain queues
-        self._drain_queue(self._audio_q)
         self._drain_queue(self._result_q)
 
         # Reset state
-        self._phrase_time = None
-        self._phrase_bytes.clear()
+        self._last_speech_time = None
         self._last_emitted_text = ""
+        self._current_phrase = ""
+
+        print("🔇 Speech-to-text stopped")
 
     def _drain_queue(self, q: Queue) -> None:
+        """Drain a queue of all items."""
         try:
             while True:
                 q.get_nowait()
@@ -158,65 +178,53 @@ class SpeechToText:
             pass
 
     def _process_loop(self) -> None:
-        """Main processing loop: buffer audio into phrases, transcribe, emit results."""
+        """Main processing loop: read audio, transcribe with Vosk, emit results."""
         while self._running.is_set():
-            # Pull whatever audio is available without blocking
-            got_any = False
-            chunks: list[bytes] = []
-            while True:
-                try:
-                    chunks.append(self._audio_q.get_nowait())
-                    got_any = True
-                except Empty:
-                    break
-
-            now = datetime.utcnow()
-            phrase_complete = False
-
-            if got_any:
-                if self._phrase_time and (now - self._phrase_time) > timedelta(seconds=self.phrase_timeout):
-                    # Too much silence -> new phrase
-                    self._phrase_bytes.clear()
-                    phrase_complete = True
-                self._phrase_time = now
-                # Append audio
-                self._phrase_bytes.extend(b"".join(chunks))
-
-                # Convert to float32 in [-1, 1]
-                if self._phrase_bytes:
-                    audio_np = np.frombuffer(self._phrase_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    # Transcribe current buffer
-                    try:
-                        result = self._wmodel.transcribe(audio_np, fp16=self.fp16)
-                        text = (result.get("text") or "").strip()
-                    except Exception as e:
-                        text = f"[transcribe error: {e}]"
-
-                    # Emit partial/final
-                    if phrase_complete and text:
+            try:
+                # Read audio chunk
+                data = self._stream.read(self.chunk_size, exception_on_overflow=False)
+                
+                if self._recognizer.AcceptWaveform(data):
+                    # Final result
+                    result = json.loads(self._recognizer.Result())
+                    text = result.get('text', '').strip()
+                    
+                    if text:
+                        self._current_phrase = text
+                        self._last_speech_time = datetime.utcnow()
                         self._emit(text, is_final=True)
                         self._last_emitted_text = text
-                    else:
-                        # Only emit partial if it actually changed (reduces spam)
-                        if text and text != self._last_emitted_text:
-                            self._emit(text, is_final=False)
-                            self._last_emitted_text = text
-            else:
-                # If no new audio and phrase_timeout elapsed, close out the phrase
-                if self._phrase_time and (now - self._phrase_time) > timedelta(seconds=self.phrase_timeout):
-                    if self._last_emitted_text:
-                        self._emit(self._last_emitted_text, is_final=True)
-                    self._phrase_bytes.clear()
-                    self._phrase_time = None
-                    self._last_emitted_text = ""
-                # Don’t spin
-                torch.cuda._sleep(10_000) if self.fp16 else None  # micro backoff; noop on CPU
-                # Fallback tiny sleep:
-                if not self.fp16:
-                    threading.Event().wait(0.02)
+                        print(f"📝 FINAL: {text}")
+                else:
+                    # Partial result
+                    partial = json.loads(self._recognizer.PartialResult())
+                    partial_text = partial.get('partial', '').strip()
+                    
+                    if partial_text and partial_text != self._last_emitted_text:
+                        self._last_speech_time = datetime.utcnow()
+                        self._emit(partial_text, is_final=False)
+                        self._last_emitted_text = partial_text
+                        print(f"🔄 PARTIAL: {partial_text}", end='\r')
+                
+                # Check for silence timeout
+                if self._last_speech_time:
+                    silence_duration = datetime.utcnow() - self._last_speech_time
+                    if silence_duration > timedelta(seconds=self.silence_timeout):
+                        if self._current_phrase and self._current_phrase != self._last_emitted_text:
+                            # Emit the current phrase as final
+                            self._emit(self._current_phrase, is_final=True)
+                            self._last_emitted_text = self._current_phrase
+                            print(f"📝 FINAL (silence): {self._current_phrase}")
+                        self._current_phrase = ""
+                        self._last_speech_time = None
+                        
+            except Exception as e:
+                if self._running.is_set():  # Only print error if we're still supposed to be running
+                    print(f"❌ Error in processing loop: {e}")
+                break
 
     def _emit(self, text: str, is_final: bool) -> None:
+        """Emit a transcription result."""
         try:
             self._result_q.put_nowait((text, is_final))
         except Exception:
@@ -241,3 +249,18 @@ class SpeechToText:
             return self._result_q.get(timeout=timeout)
         except Empty:
             return None
+
+    def is_running(self) -> bool:
+        """Check if speech-to-text is currently running."""
+        return self._running.is_set()
+
+    def get_stats(self) -> dict:
+        """Get processing statistics."""
+        return {
+            'is_running': self.is_running(),
+            'model_path': self.model_path,
+            'sample_rate': self.sample_rate,
+            'chunk_size': self.chunk_size,
+            'current_phrase': self._current_phrase,
+            'last_emitted_text': self._last_emitted_text
+        }

@@ -2,14 +2,20 @@ from dotenv import load_dotenv
 # import multiprocessing
 import os
 
-load_dotenv()
+# Load .env file from the jarvis directory
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 class Config:
-    STT_MODEL = os.getenv("STT_MODEL")
+    # Vosk STT Configuration
+    VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "models/vosk-model-small-en-us-0.15")
     LLM_MODEL = os.getenv("LLM_MODEL")
 
     TTS_MODEL_ONNX = os.getenv("TTS_MODEL_ONNX")
     TTS_MODEL_JSON = os.getenv("TTS_MODEL_JSON")
+    
+    # Voice Activation Configuration
+    WAKE_WORDS = os.getenv("WAKE_WORDS", "jarvis,hey jarvis,okay jarvis").split(",")
+    VOICE_ACTIVATION_SENSITIVITY = float(os.getenv("VOICE_ACTIVATION_SENSITIVITY", "0.8"))
 
     # SuperMCP Configuration
     SUPERMCP_SERVER_PATH = os.getenv("SUPERMCP_SERVER_PATH", "SuperMCP/SuperMCP.py")

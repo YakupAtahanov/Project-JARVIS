@@ -3,9 +3,11 @@ from .config import Config
 from .voice_output import TextToSpeech
 from .llm import LLM
 from .supermcp_client import SuperMCPWrapper
+from .voice_activation import VoiceActivation
 from json import dumps
 import platform
 import shutil
+import time
 
 class Jarvis:
     def __init__(self):
@@ -30,13 +32,26 @@ class Jarvis:
 
         print("Initiating STT...")
         self.stt = SpeechToText(
-            model=Config.STT_MODEL, # tiny/base/small/medium/large
-            english_only=True, # False for multilingual
-            energy_threshold=1000,
-            record_timeout=2.0,
+            model_path=Config.VOSK_MODEL_PATH,  # Vosk model path
+            sample_rate=16000,
+            chunk_size=4000,
             phrase_timeout=3.0,
-            mic_name_substring=None
+            silence_timeout=1.0,
+            device_index=None  # Use default audio device
         )
+
+        print("Initiating Voice Activation...")
+        self.voice_activation = VoiceActivation(
+            wake_words=Config.WAKE_WORDS,
+            model_path=Config.VOSK_MODEL_PATH,
+            sample_rate=16000,
+            chunk_size=4000,
+            sensitivity=Config.VOICE_ACTIVATION_SENSITIVITY,
+            on_wake_word=self._on_wake_word_detected
+        )
+        
+        # Flag to indicate wake word was detected
+        self._wake_word_detected = False
         print("Initiations Complete!")
 
     def _get_system_info(self):
@@ -143,7 +158,69 @@ class Jarvis:
         except Exception as e:
             return {"error": f"Command execution failed: {e}"}
 
+    def _on_wake_word_detected(self):
+        """Callback when wake word is detected."""
+        print("Wake word detected! Setting flag...")
+        # Just set a flag - don't try to stop the thread from within itself
+        self._wake_word_detected = True
+
+    def listen_with_activation(self):
+        """Listen with voice activation (wake word detection)."""
+        try:
+            print("Starting JARVIS with voice activation...")
+            print("Say 'Jarvis' to activate me!")
+            print("Press Ctrl+C to stop.\n")
+            
+            # Start voice activation
+            if not self.voice_activation.start_listening():
+                print("Failed to start voice activation")
+                return
+            
+            # Main loop - check for wake word detection
+            while True:
+                if self._wake_word_detected:
+                    self._wake_word_detected = False  # Reset flag
+                    self._process_voice_command()
+                time.sleep(0.1)  # Small delay to avoid busy waiting
+                    
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+        finally:
+            self.voice_activation.cleanup()
+    
+    def _process_voice_command(self):
+        """Process voice command after wake word detection."""
+        print("Starting voice processing...")
+        
+        # Stop voice activation to free up audio resources
+        self.voice_activation.stop_listening()
+        
+        # Give a brief response
+        self.tts.say("Yes, I'm listening.")
+        
+        # Start STT processing
+        self.stt.start()
+        try:
+            print("Listening for your command...")
+            for text, is_final in self.stt.iter_results():
+                if is_final and text.strip():
+                    print(f"Final Input: {text}")
+                    response = self.ask(prompt=text)
+                    print(f"Response: {response['output']}")
+                    self.tts.say(response["output"])
+                    break  # Exit after processing one command
+        except Exception as e:
+            print(f"Error processing voice command: {e}")
+        finally:
+            self.stt.stop()
+            print("Voice processing completed. Restarting wake word detection...")
+            
+            # Restart voice activation
+            if not self.voice_activation.start_listening():
+                print("Failed to restart voice activation")
+
     def listen(self):
+        """Legacy continuous listening mode (without wake word detection)."""
         try:
             self.stt.start()
             self.tts.say("I am listenning.")
@@ -160,4 +237,5 @@ class Jarvis:
 
 if __name__ == "__main__":
     jarvis = Jarvis()
-    jarvis.listen()
+    # Use voice activation mode instead of continuous listening
+    jarvis.listen_with_activation()
