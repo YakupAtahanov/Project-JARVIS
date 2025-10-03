@@ -19,6 +19,9 @@ class Config:
     
     # CLI Output Mode Configuration
     OUTPUT_MODE = os.getenv("OUTPUT_MODE", "voice")  # voice or text
+    
+    # Conversation History Configuration
+    RESET_HISTORY_AFTER_RESPONSE = os.getenv("RESET_HISTORY_AFTER_RESPONSE", "true").lower() == "true"
 
     # SuperMCP Configuration
     SUPERMCP_SERVER_PATH = os.getenv("SUPERMCP_SERVER_PATH", "SuperMCP/SuperMCP.py")

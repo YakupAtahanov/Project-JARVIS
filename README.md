@@ -104,6 +104,9 @@ jarvis
 | `jarvis text` | Set output mode to text |
 | `jarvis voice` | Set output mode to voice (TTS) |
 | `jarvis output-type` | Show current output mode |
+| `jarvis history-reset on` | Enable history reset after each response |
+| `jarvis history-reset off` | Disable history reset (maintain context) |
+| `jarvis history-reset` | Show current history reset setting |
 | `jarvis --help` | Show help message |
 
 ### **Usage Examples**
@@ -121,6 +124,17 @@ $ jarvis ask "analyze system logs" | grep ERROR
 $ jarvis voice
 $ jarvis ask "read me the news"
 [TTS speaks the response]
+
+# Maintain conversation context
+$ jarvis history-reset off
+$ jarvis ask "My name is John"
+$ jarvis ask "What's my name?"
+# JARVIS remembers: "Your name is John"
+
+# Reset context after each response (default)
+$ jarvis history-reset on
+$ jarvis ask "What's my name?"
+# JARVIS doesn't remember previous context
 ```
 
 ---

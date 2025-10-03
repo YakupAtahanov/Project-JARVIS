@@ -29,6 +29,30 @@ def set_output_mode(mode: str) -> None:
         print(f"Error: Invalid mode '{mode}'. Must be 'text' or 'voice'")
         sys.exit(1)
     
+    _update_env_setting("OUTPUT_MODE", mode)
+    print(f"✓ Output mode set to: {mode}")
+
+
+def set_history_reset(enabled: bool) -> None:
+    """
+    Update RESET_HISTORY_AFTER_RESPONSE in .env file
+    
+    Args:
+        enabled: True to reset history, False to maintain context
+    """
+    value = "true" if enabled else "false"
+    _update_env_setting("RESET_HISTORY_AFTER_RESPONSE", value)
+    print(f"✓ History reset {'enabled' if enabled else 'disabled'}")
+
+
+def _update_env_setting(key: str, value: str) -> None:
+    """
+    Update a setting in .env file
+    
+    Args:
+        key: Environment variable name
+        value: New value
+    """
     # Read current .env or config.env.template
     if ENV_FILE.exists():
         lines = ENV_FILE.read_text().splitlines()
@@ -41,25 +65,23 @@ def set_output_mode(mode: str) -> None:
         else:
             lines = []
     
-    # Update or add OUTPUT_MODE
+    # Update or add setting
     found = False
     for i, line in enumerate(lines):
-        if line.startswith("OUTPUT_MODE=") or line.startswith("#OUTPUT_MODE="):
-            lines[i] = f"OUTPUT_MODE={mode}"
+        if line.startswith(f"{key}=") or line.startswith(f"#{key}="):
+            lines[i] = f"{key}={value}"
             found = True
             break
     
     if not found:
-        lines.append(f"OUTPUT_MODE={mode}")
+        lines.append(f"{key}={value}")
     
     # Write back to .env
     ENV_FILE.write_text("\n".join(lines) + "\n")
     
     # Update current process environment
-    os.environ["OUTPUT_MODE"] = mode
-    Config.OUTPUT_MODE = mode
-    
-    print(f"✓ Output mode set to: {mode}")
+    os.environ[key] = value
+    setattr(Config, key, value)
 
 
 def get_output_mode() -> str:
@@ -77,11 +99,15 @@ def show_usage() -> None:
     print("  jarvis voice              # Set voice output mode")
     print("  jarvis ask \"<message>\"    # Ask a question")
     print("  jarvis output-type        # Show current output mode")
+    print("  jarvis history-reset on   # Enable history reset after each response")
+    print("  jarvis history-reset off  # Disable history reset (maintain context)")
+    print("  jarvis history-reset      # Show current history reset setting")
     print()
     print("Examples:")
     print("  jarvis                    # Start voice assistant")
     print("  jarvis text               # Switch to text output")
     print("  jarvis ask \"what is 2+2?\" # Ask a question")
+    print("  jarvis history-reset off  # Maintain conversation context")
     print("  jarvis output-type        # Check current mode")
 
 
@@ -109,6 +135,25 @@ def main() -> None:
     elif command == "output-type":
         mode = get_output_mode()
         print(f"Current output mode: {mode}")
+        
+    elif command == "history-reset":
+        if len(sys.argv) == 2:
+            # Show current setting
+            enabled = Config.RESET_HISTORY_AFTER_RESPONSE
+            print(f"History reset: {'enabled' if enabled else 'disabled'}")
+        elif len(sys.argv) == 3:
+            # Set new value
+            value = sys.argv[2].lower()
+            if value in ["on", "true", "1", "yes", "enable"]:
+                set_history_reset(True)
+            elif value in ["off", "false", "0", "no", "disable"]:
+                set_history_reset(False)
+            else:
+                print(f"Error: Invalid value '{value}'. Use 'on' or 'off'")
+                sys.exit(1)
+        else:
+            print("Usage: jarvis history-reset [on|off]")
+            sys.exit(1)
         
     elif command == "ask":
         if len(sys.argv) < 3:
