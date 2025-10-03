@@ -10,12 +10,14 @@ Project JARVIS is an innovative AI-powered voice assistant that combines natural
 
 - **🎤 Voice-First Interface**: Real-time speech recognition and synthesis
 - **👂 Wake Word Detection**: Always-listening voice activation with customizable wake words ("Jarvis", "Hey Jarvis", etc.)
+- **💻 CLI Support**: Text-based interface with `jarvis ask` command for scripting and accessibility
 - **🧠 AI-Driven Tool Discovery**: Automatically discovers and uses available MCP servers
 - **🔧 Dynamic Capability Extension**: Add new tools without code changes
 - **🛡️ Secure Local Processing**: All operations run locally for privacy
 - **🌐 Cross-Platform Support**: Windows, Linux, macOS compatibility
 - **⚡ Self-Extending AI**: Can create new MCP servers on demand
-- **🎯 Smart Audio Management**: Automatically switches between wake word detection and command processing  
+- **🎯 Smart Audio Management**: Automatically switches between wake word detection and command processing
+- **🔄 Flexible Output**: Choose between text or voice output for responses  
 
 ---
 
@@ -64,6 +66,62 @@ Project JARVIS is an innovative AI-powered voice assistant that combines natural
    cd jarvis
    python main.py
    ```
+
+---
+
+## 💻 CLI Interface
+
+JARVIS now supports a command-line interface for text-based interaction without voice input!
+
+### **Quick Start**
+
+```bash
+# Ask a question (uses current output mode)
+jarvis ask "what is the weather?"
+
+# Switch to text output
+jarvis text
+
+# Ask questions with text output
+jarvis ask "list files in current directory"
+
+# Switch to voice output
+jarvis voice
+
+# Check current mode
+jarvis output-type
+
+# Start voice activation mode (default)
+jarvis
+```
+
+### **CLI Commands**
+
+| Command | Description |
+|---------|-------------|
+| `jarvis` | Start voice activation mode (wake word detection) |
+| `jarvis ask "<message>"` | Ask a question via text input |
+| `jarvis text` | Set output mode to text |
+| `jarvis voice` | Set output mode to voice (TTS) |
+| `jarvis output-type` | Show current output mode |
+| `jarvis --help` | Show help message |
+
+### **Usage Examples**
+
+```bash
+# Quick text query
+$ jarvis text
+$ jarvis ask "what is 2+2?"
+Four.
+
+# Use in scripts or pipelines
+$ jarvis ask "analyze system logs" | grep ERROR
+
+# Voice output for accessibility
+$ jarvis voice
+$ jarvis ask "read me the news"
+[TTS speaks the response]
+```
 
 ---
 
@@ -160,6 +218,8 @@ Wake Word → Voice Activation → STT → LLM → SuperMCP → MCP Servers → 
 ### **Current Capabilities**
 - ✅ **Voice-First AI Assistant**: Real-time speech processing
 - ✅ **Wake Word Detection**: Always-listening voice activation system
+- ✅ **CLI Interface**: Text-based command interface for scripting
+- ✅ **Flexible Output**: Text or voice response modes
 - ✅ **Dynamic Tool Discovery**: SuperMCP orchestration
 - ✅ **Local Privacy**: All processing on-device
 - ✅ **Cross-Platform**: Windows, Linux, macOS support
