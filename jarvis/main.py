@@ -10,7 +10,16 @@ import shutil
 import time
 
 class Jarvis:
-    def __init__(self):
+    def __init__(self, text_mode=False):
+        """
+        Initialize JARVIS AI Assistant
+        
+        Args:
+            text_mode: If True, skip voice input components (STT, Voice Activation)
+                      for CLI text-only mode
+        """
+        self.text_mode = text_mode
+        
         print("Getting system information...")
         system_info = self._get_system_info()
         print("Initiating SuperMCP...")
@@ -30,28 +39,36 @@ class Jarvis:
             config_path=f"models/piper/{Config.TTS_MODEL_JSON}",
         )
 
-        print("Initiating STT...")
-        self.stt = SpeechToText(
-            model_path=Config.VOSK_MODEL_PATH,  # Vosk model path
-            sample_rate=16000,
-            chunk_size=4000,
-            phrase_timeout=3.0,
-            silence_timeout=1.0,
-            device_index=None  # Use default audio device
-        )
+        # Only initialize voice input components if not in text mode
+        if not text_mode:
+            print("Initiating STT...")
+            self.stt = SpeechToText(
+                model_path=Config.VOSK_MODEL_PATH,  # Vosk model path
+                sample_rate=16000,
+                chunk_size=4000,
+                phrase_timeout=3.0,
+                silence_timeout=1.0,
+                device_index=None  # Use default audio device
+            )
 
-        print("Initiating Voice Activation...")
-        self.voice_activation = VoiceActivation(
-            wake_words=Config.WAKE_WORDS,
-            model_path=Config.VOSK_MODEL_PATH,
-            sample_rate=16000,
-            chunk_size=4000,
-            sensitivity=Config.VOICE_ACTIVATION_SENSITIVITY,
-            on_wake_word=self._on_wake_word_detected
-        )
-        
-        # Flag to indicate wake word was detected
-        self._wake_word_detected = False
+            print("Initiating Voice Activation...")
+            self.voice_activation = VoiceActivation(
+                wake_words=Config.WAKE_WORDS,
+                model_path=Config.VOSK_MODEL_PATH,
+                sample_rate=16000,
+                chunk_size=4000,
+                sensitivity=Config.VOICE_ACTIVATION_SENSITIVITY,
+                on_wake_word=self._on_wake_word_detected
+            )
+            
+            # Flag to indicate wake word was detected
+            self._wake_word_detected = False
+        else:
+            # Set placeholders for text mode
+            self.stt = None
+            self.voice_activation = None
+            self._wake_word_detected = False
+            
         print("Initiations Complete!")
 
     def _get_system_info(self):
@@ -90,6 +107,13 @@ class Jarvis:
                 response = self.llm.ask(dumps(supermcp_output))
 
         self.llm.reset_history()
+        
+        # Handle output based on configured mode
+        if Config.OUTPUT_MODE == "voice":
+            self.tts.say(response["output"])
+        elif Config.OUTPUT_MODE == "text":
+            print(response["output"])
+        
         return response
 
     def _execute_supermcp_commands(self, command_sequence):
@@ -181,7 +205,7 @@ class Jarvis:
                 if self._wake_word_detected:
                     self._wake_word_detected = False  # Reset flag
                     self._process_voice_command()
-                time.sleep(0.1)  # Small delay to avoid busy waiting
+                time.sleep(0.5)  # Small delay to avoid busy waiting
                     
         except KeyboardInterrupt:
             print("\nShutting down...")
@@ -207,7 +231,6 @@ class Jarvis:
                     print(f"Final Input: {text}")
                     response = self.ask(prompt=text)
                     print(f"Response: {response['output']}")
-                    self.tts.say(response["output"])
                     break  # Exit after processing one command
         except Exception as e:
             print(f"Error processing voice command: {e}")
@@ -228,14 +251,17 @@ class Jarvis:
             for text, is_final in self.stt.iter_results():
                 if is_final:
                     print(text)
-                    self.tts.say(self.ask(prompt=text)["output"])
+                    self.ask(prompt=text)  # ask() now handles output based on OUTPUT_MODE
                     
         except KeyboardInterrupt:
             pass
         finally:
             self.stt.stop()
 
+def main():
+    """Main entry point for JARVIS - delegates to CLI handler"""
+    from .cli import main as cli_main
+    cli_main()
+
 if __name__ == "__main__":
-    jarvis = Jarvis()
-    # Use voice activation mode instead of continuous listening
-    jarvis.listen_with_activation()
+    main()

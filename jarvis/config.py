@@ -16,6 +16,9 @@ class Config:
     # Voice Activation Configuration
     WAKE_WORDS = os.getenv("WAKE_WORDS", "jarvis,hey jarvis,okay jarvis").split(",")
     VOICE_ACTIVATION_SENSITIVITY = float(os.getenv("VOICE_ACTIVATION_SENSITIVITY", "0.8"))
+    
+    # CLI Output Mode Configuration
+    OUTPUT_MODE = os.getenv("OUTPUT_MODE", "voice")  # voice or text
 
     # SuperMCP Configuration
     SUPERMCP_SERVER_PATH = os.getenv("SUPERMCP_SERVER_PATH", "SuperMCP/SuperMCP.py")
