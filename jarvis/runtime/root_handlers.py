@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from logging import Logger
 from typing import Any
 
@@ -11,7 +12,11 @@ from ..core.voice_state import VoiceState
 from .io import broadcast_to_gui_clients, enrich_pending_with_goals, set_gui_state
 from .llm_bridge import ask_llm
 from .output_hooks import emit_activity
-from .root_context import build_root_context, compact_payload_for_llm
+from .root_context import (
+    build_root_context,
+    compact_payload_for_llm,
+    required_config_keys,
+)
 from .session_commands import handle_slash_command
 
 _NO_LLM_MSG = (
@@ -64,44 +69,69 @@ async def on_user_input(app: Any, logger: Logger, text: str) -> None:
     await app._act_on_root_response(response)
 
 
-_AUTH_ERROR_PATTERNS = (
+# Machine-readable failure codes: unambiguous enough to trust on their own.
+_AUTH_ERROR_CODES = (
     "subscription_token_invalid",
     "invalid_api_key",
     "invalid_token",
     "token_invalid",
-    "unauthorized",
-    "authentication",
 )
+
+# Error-shaped phrasings. Bare "authentication" / "unauthorized" deliberately are
+# NOT patterns: this runs over the serialized signal, tool output included, so a
+# successful web search about OAuth would otherwise be read as an auth failure
+# and its perfectly healthy server told to reconfigure itself.
+_AUTH_ERROR_PHRASES = re.compile(
+    r"(?:authentication|authorization|auth)[\s_-]+(?:failed|failure|error|required|denied)"
+    r"|(?:401|403)\s*(?:unauthorized|forbidden)"
+    r"|(?:unauthorized|forbidden)\s*[(\[]\s*(?:401|403)"
+    r"|http[\s/]*(?:error[\s:]*)?(?:401|403)\b"
+    r"|\"?status(?:[_ ]code)?\"?\s*[:=]\s*\"?(?:401|403)\b"
+    r"|\b(?:invalid|expired|missing|bad)\s+(?:api[\s_-]?key|token|credential)",
+    re.IGNORECASE,
+)
+
+# Only these can report a tool failure. REMIND says "still running" and KILL says
+# "we terminated it" — neither is evidence a server needs reconfiguring, and both
+# carry free text that can mention auth in passing.
+_FAILURE_SIGNAL_TYPES = ("EXIT", "TIMEOUT")
 
 
 def _contains_auth_error(text: str) -> bool:
-    text_lower = text.lower()
-    return any(p in text_lower for p in _AUTH_ERROR_PATTERNS)
+    """True when the text looks like an authentication *failure*, not a mention."""
+    lowered = text.lower()
+    if any(code in lowered for code in _AUTH_ERROR_CODES):
+        return True
+    return _AUTH_ERROR_PHRASES.search(text) is not None
 
 
 def _server_ids_for_signals(app: Any, signals: list[dict[str, Any]], owning_goal: Any):
     """Server ids behind the PIDs in these signals.
 
-    Preferred source is the goal's pid -> batch-fingerprint map (#205), whose
-    fingerprints encode ``server<US>tool<US>params`` per task; fall back to a
-    ``server`` field on the signal payload itself.
+    The goal's pid -> server map attributes each PID to its own task, so one
+    failing task names one server. The pid -> batch-fingerprint map (#205) is
+    only a fallback, and only for a single-task fingerprint: it covers a whole
+    batch, so decoding a multi-task one would name servers that never failed —
+    including, on the confirmation-resume path, ones the user denied. When the
+    PID is unmapped and the fingerprint is batch-wide, name nothing; a missing
+    hint beats a hint pointing at the wrong server.
     """
     from .dispatch_flow import _FP_FIELD_SEP, _FP_TASK_SEP
 
     server_ids: set[str] = set()
+    pid_servers = getattr(owning_goal, "dispatch_pid_server", {}) or {}
     pid_fps = getattr(owning_goal, "dispatch_pid_fps", {}) or {}
     for sig in signals:
         pid = sig.get("pid")
-        fingerprint = pid_fps.get(pid)
-        if fingerprint:
-            for task_fp in fingerprint.split(_FP_TASK_SEP):
-                server = task_fp.split(_FP_FIELD_SEP)[0]
-                if server:
-                    server_ids.add(server)
-            continue
-        server = sig.get("server")
-        if isinstance(server, str) and server:
+        server = pid_servers.get(pid)
+        if server:
             server_ids.add(server)
+            continue
+        fingerprint = pid_fps.get(pid)
+        if fingerprint and _FP_TASK_SEP not in fingerprint:
+            server = fingerprint.split(_FP_FIELD_SEP)[0]
+            if server:
+                server_ids.add(server)
     return server_ids
 
 
@@ -121,20 +151,22 @@ async def _config_hint_for_signals(
     #205 guard kills the goal instead of letting the LLM self-heal by calling
     configure_server with the right key names.
     """
+    failures = [s for s in signals if s.get("type") in _FAILURE_SIGNAL_TYPES]
+    if not failures:
+        return ""
     if not _contains_auth_error(signal_text):
         return ""
 
     hint = ""
-    for sid in sorted(_server_ids_for_signals(app, signals, owning_goal)):
+    for sid in sorted(_server_ids_for_signals(app, failures, owning_goal)):
         try:
             manifest = await app.dispatch.get_server_manifest(sid)
         except Exception as e:  # a hint is best-effort; never break the turn
             logger.debug(f"Could not fetch manifest for {sid}: {e}")
             continue
-        props = (manifest or {}).get("configurableProperties") or []
-        required_keys = [
-            p["key"] for p in props if isinstance(p, dict) and p.get("key")
-        ]
+        required_keys = required_config_keys(
+            (manifest or {}).get("configurableProperties")
+        )
         if not required_keys:
             continue
         key_list = ", ".join(required_keys)
@@ -201,10 +233,15 @@ async def on_dispatch_signal(app: Any, logger: Logger, signal: dict[str, Any]) -
         )
 
     signal_text = json.dumps(signal)
+    hint_signals: list[dict[str, Any]] = [signal]
     if exit_data is not None:
         signal_text += compact_payload_for_llm(exit_data)
+        # A merged REMIND+EXIT arrives typed REMIND but carries the real EXIT
+        # (event_merger.py). Hint off the outcome, not off the wrapper.
+        if isinstance(exit_data, dict):
+            hint_signals = [exit_data]
     context += await _config_hint_for_signals(
-        app, logger, [signal], owning_goal, signal_text
+        app, logger, hint_signals, owning_goal, signal_text
     )
 
     response = await ask_llm(app, logger, context, tag="root", mode="root")
@@ -327,6 +364,13 @@ async def on_confirmation_response(
             pids = _extract_pids_from_result(result)
             if pids:
                 app.goals.link_tasks(pending.session_id, pids)
+                # Per-PID server attribution over the APPROVED subset — the only
+                # tasks that actually ran. Keeping this separate from the
+                # fingerprint is what makes a denied server structurally unable
+                # to show up in a later CONFIG_HINT.
+                app.goals.link_dispatch_servers(
+                    pending.session_id, pids, pending.approved_tasks
+                )
                 # Re-establish the pid -> fingerprint mapping the direct path sets
                 # at dispatch time (dispatch_flow.py). Without it the repeat guard
                 # can never see a confirmation-gated tool's EXIT as progress, so a

@@ -15,7 +15,7 @@ Where it disagrees with `README.md`'s "runs on any platform" copy or
 ## 1. Thesis — why this is research, not just engineering
 
 The project's central claim is that **traditional OS security models are
-inadequate for probabilistic AI agents**, and it answers that with a six-threat
+inadequate for probabilistic AI agents**, and it answers that with a seven-threat
 taxonomy plus mitigations (the TLA confirmation gate, the Cryptographic Boundary
 Protocol, the vetted registry, integrity verification). The taxonomy is
 **about the agent**, not about Linux — so it should be *universal*. The
@@ -376,6 +376,13 @@ verified live). Every surface in §4 traces to that audit.
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-24:* §1's taxonomy count corrected from 6 to **7** —
+Bloated Context and Forgetful Context are separate, adjacent entries, per the
+canonical status table in `docs/SECURITY-ARCHITECTURE.md` (and `README.md`,
+`docs/architecture.md`, `docs/HERMES-COMPARISON.md`, which already said seven).
+The §1 argument is unaffected: the taxonomy is still the invariant and the
+mitigations are still platform-instantiated.
 
 *2026-07-24:* §3.1 trued up to the merged tree — the accept-time peer-UID check
 (`SO_PEERCRED`/`LOCAL_PEERCRED`) is now **implemented** (`linux.py:91-104`,

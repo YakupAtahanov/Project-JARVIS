@@ -671,6 +671,9 @@ async def dispatch_execute_tasks(
     if pids and goal_id:
         app.goals.link_tasks(goal_id, pids)
         app.goals.link_dispatch_fingerprint(goal_id, fingerprint, pids)
+        # Per-PID server attribution alongside the batch fingerprint, so an
+        # auth-error EXIT names only the server behind the failing task.
+        app.goals.link_dispatch_servers(goal_id, pids, tasks)
     emit_activity(app, "Tasks dispatched; awaiting results…", kind="dispatch")
 
 

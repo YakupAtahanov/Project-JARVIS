@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from jarvis.runtime import io as runtime_io
-from jarvis.runtime import root_handlers
+from jarvis.runtime import lifecycle, root_handlers
 
 
 def _make_app(confirmations=None, gui_clients=None):
@@ -159,3 +159,60 @@ class TestOnConfirmationResponseBroadcast:
             )
 
         broadcast.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestBroadcastConfirmationNotice:
+    """The create-time emitter must carry the same goal_description (#192) as the
+    other two confirmation_list emitters.
+
+    This is the broadcast that populates an already-open Permission Requests
+    view when a confirmation *arrives*, so if it ships a bare list_pending() the
+    goal column is empty on arrival and only fills in after some unrelated
+    re-query — one message type, two schemas.
+    """
+
+    @pytest.mark.asyncio
+    async def test_arrival_broadcast_carries_goal_description(self):
+        app = _make_app(
+            confirmations=[{"id": "a", "session_id": "goal-1", "tool_names": ["x"]}],
+            gui_clients={Mock()},
+        )
+        app._output_clients = set()
+        app.goals = Mock()
+        app.goals.get_goal.return_value = SimpleNamespace(description="update the OS")
+
+        notice = {"type": "confirmation_request", "id": "a"}
+        with patch.object(
+            lifecycle, "broadcast_to_gui_clients", new=AsyncMock()
+        ) as broadcast:
+            lifecycle._broadcast_confirmation_notice(app, notice)
+            await asyncio.sleep(0)
+
+        assert broadcast.await_count == 2
+        # First the notice itself, then the refreshed (enriched) pending list.
+        assert broadcast.await_args_list[0].args[1] is notice
+        payload = broadcast.await_args_list[1].args[1]
+        assert payload["type"] == "confirmation_list"
+        assert payload["confirmations"][0]["goal_description"] == "update the OS"
+
+    @pytest.mark.asyncio
+    async def test_arrival_broadcast_without_goal_manager_still_sets_the_key(self):
+        """enrich_pending_with_goals degrades to None rather than requiring a
+        GoalManager on app, so this adds no new wiring requirement."""
+        app = _make_app(
+            confirmations=[{"id": "a", "session_id": "goal-1", "tool_names": ["x"]}],
+            gui_clients={Mock()},
+        )
+        app._output_clients = set()
+
+        with patch.object(
+            lifecycle, "broadcast_to_gui_clients", new=AsyncMock()
+        ) as broadcast:
+            lifecycle._broadcast_confirmation_notice(
+                app, {"type": "confirmation_request", "id": "a"}
+            )
+            await asyncio.sleep(0)
+
+        payload = broadcast.await_args_list[1].args[1]
+        assert payload["confirmations"][0]["goal_description"] is None

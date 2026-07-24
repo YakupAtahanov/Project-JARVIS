@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from ..config import Config
 from ..core.voice_state import VoiceState
 from ..platform import current as platform
-from .io import broadcast_to_gui_clients, set_gui_state
+from .io import broadcast_to_gui_clients, enrich_pending_with_goals, set_gui_state
 from .voice_activation_thread import run_voice_activation
 
 
@@ -59,6 +59,13 @@ def _broadcast_confirmation_notice(app: Any, message: dict[str, Any]) -> None:
     clients connected, plus a refreshed pending list for GUI clients so an
     already-open Permission Requests view updates the moment a new one
     arrives, not just when one gets resolved.
+
+    The list goes through enrich_pending_with_goals so this emitter carries the
+    same goal_description (#192) as the other two confirmation_list emitters
+    (io.py's list_confirmations query, root_handlers' resolution broadcast).
+    This is the create-time broadcast — the primary way an open view is
+    populated — so without it the field would appear only after some unrelated
+    re-query.
     """
     if Config.JARVIS_OUTPUT_SOCKET and app._output_clients:
         app._on_output_for_broadcast(message)
@@ -69,7 +76,7 @@ def _broadcast_confirmation_notice(app: Any, message: dict[str, Any]) -> None:
                 app,
                 {
                     "type": "confirmation_list",
-                    "confirmations": app.confirmation.list_pending(),
+                    "confirmations": enrich_pending_with_goals(app),
                 },
             )
         )

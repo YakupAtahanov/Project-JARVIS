@@ -9,6 +9,25 @@ from typing import Any, Dict, List, Optional
 from ..config import Config
 
 
+def required_config_keys(props: Any) -> List[str]:
+    """Config keys the LLM must actually supply, honoring each ``required`` flag.
+
+    An absent flag counts as required: the manifest schema makes the field
+    mandatory, but real manifests and fixtures omit it, and treating omission as
+    optional would empty the list and silence the config hints entirely. Listing
+    optional tuning knobs as required is the other failure mode — it pushes the
+    LLM to invent values for them while recovering from an auth failure.
+
+    Shared by both hint surfaces (SERVER_DOCS here, CONFIG_HINT in
+    root_handlers) so they can never disagree about what a server needs.
+    """
+    return [
+        p["key"]
+        for p in props or []
+        if isinstance(p, dict) and p.get("key") and p.get("required", True) is not False
+    ]
+
+
 def compact_payload_for_llm(
     payload: Any,
     *,
@@ -167,19 +186,14 @@ def format_server_docs(
                     f"SERVER_DOCS: {server_id} — server requires configuration before it can run.",
                     f"  Error: {error}",
                 ]
-                if configurable_props:
-                    required_keys = [
-                        p["key"]
-                        for p in configurable_props
-                        if isinstance(p, dict) and p.get("key")
-                    ]
-                    if required_keys:
-                        key_list = ", ".join(required_keys)
-                        example = ", ".join(f'"{k}": "<value>"' for k in required_keys)
-                        lines.append(f"  Required config key(s): {key_list}")
-                        lines.append(
-                            f'  Call: {{"action": "configure_server", "server_id": "{server_id}", "config": {{{example}}}}}'
-                        )
+                required_keys = required_config_keys(configurable_props)
+                if required_keys:
+                    key_list = ", ".join(required_keys)
+                    example = ", ".join(f'"{k}": "<value>"' for k in required_keys)
+                    lines.append(f"  Required config key(s): {key_list}")
+                    lines.append(
+                        f'  Call: {{"action": "configure_server", "server_id": "{server_id}", "config": {{{example}}}}}'
+                    )
                 else:
                     lines.append("  Use configure_server to set the required value(s).")
                 lines.append("  Then retry get_server_docs to verify it starts.")

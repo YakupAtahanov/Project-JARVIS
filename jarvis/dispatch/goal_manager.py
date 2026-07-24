@@ -96,6 +96,11 @@ class Goal:
     recent_dispatches: List[str] = field(default_factory=list)
     dispatch_pid_fps: Dict[int, str] = field(default_factory=dict)
     dispatch_last_output: Dict[str, str] = field(default_factory=dict)
+    # Per-PID server attribution, also not LLM-facing. dispatch_pid_fps maps a
+    # PID to the whole *batch* fingerprint, which cannot say which task within
+    # that batch the PID is; this can, so a per-signal hint names only the
+    # server that actually failed.
+    dispatch_pid_server: Dict[int, str] = field(default_factory=dict)
 
     def to_context(self) -> Dict[str, Any]:
         """Flat serialization for LLM context (no children — use get_goal_context)."""
@@ -208,6 +213,31 @@ class GoalManager:
             return
         for pid in pids:
             goal.dispatch_pid_fps[pid] = fingerprint
+
+    def link_dispatch_servers(
+        self, goal_id: str, pids: List[int], tasks: List[Dict[str, Any]]
+    ):
+        """Map each dispatched PID to the server of *its own* task.
+
+        The batch fingerprint deliberately covers the whole batch (the repeat
+        guard counts batches), so it cannot attribute one PID to one server.
+        Without this map, anything decoding the fingerprint for a single
+        failing PID names every server in the batch.
+
+        _extract_pids_from_result re-parses INIT lines out of dispatch's
+        rolling signal window, so it can re-offer PIDs from earlier dispatches;
+        this batch's INITs are the most recent, so pair the trailing len(tasks)
+        PIDs with tasks in dispatch order. If dispatch returned fewer PIDs than
+        tasks the pairing is ambiguous — record nothing rather than
+        mis-attribute a failure to a server that never ran it.
+        """
+        goal = self._find_goal(goal_id)
+        if not goal or not tasks or len(pids) < len(tasks):
+            return
+        for pid, task in zip(pids[-len(tasks) :], tasks):
+            server = task.get("server") if isinstance(task, dict) else None
+            if isinstance(server, str) and server:
+                goal.dispatch_pid_server[pid] = server
 
     def update_strategy(self, goal_id: str, strategy: str):
         """LLM updates its forward-looking plan for this goal."""
