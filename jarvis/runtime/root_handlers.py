@@ -8,7 +8,7 @@ from logging import Logger
 from typing import Any
 
 from ..core.voice_state import VoiceState
-from .io import broadcast_to_gui_clients, set_gui_state
+from .io import broadcast_to_gui_clients, enrich_pending_with_goals, set_gui_state
 from .llm_bridge import ask_llm
 from .output_hooks import emit_activity
 from .root_context import build_root_context, compact_payload_for_llm
@@ -64,6 +64,90 @@ async def on_user_input(app: Any, logger: Logger, text: str) -> None:
     await app._act_on_root_response(response)
 
 
+_AUTH_ERROR_PATTERNS = (
+    "subscription_token_invalid",
+    "invalid_api_key",
+    "invalid_token",
+    "token_invalid",
+    "unauthorized",
+    "authentication",
+)
+
+
+def _contains_auth_error(text: str) -> bool:
+    text_lower = text.lower()
+    return any(p in text_lower for p in _AUTH_ERROR_PATTERNS)
+
+
+def _server_ids_for_signals(app: Any, signals: list[dict[str, Any]], owning_goal: Any):
+    """Server ids behind the PIDs in these signals.
+
+    Preferred source is the goal's pid -> batch-fingerprint map (#205), whose
+    fingerprints encode ``server<US>tool<US>params`` per task; fall back to a
+    ``server`` field on the signal payload itself.
+    """
+    from .dispatch_flow import _FP_FIELD_SEP, _FP_TASK_SEP
+
+    server_ids: set[str] = set()
+    pid_fps = getattr(owning_goal, "dispatch_pid_fps", {}) or {}
+    for sig in signals:
+        pid = sig.get("pid")
+        fingerprint = pid_fps.get(pid)
+        if fingerprint:
+            for task_fp in fingerprint.split(_FP_TASK_SEP):
+                server = task_fp.split(_FP_FIELD_SEP)[0]
+                if server:
+                    server_ids.add(server)
+            continue
+        server = sig.get("server")
+        if isinstance(server, str) and server:
+            server_ids.add(server)
+    return server_ids
+
+
+async def _config_hint_for_signals(
+    app: Any,
+    logger: Logger,
+    signals: list[dict[str, Any]],
+    owning_goal: Any,
+    signal_text: str,
+) -> str:
+    """CONFIG_HINT block naming the exact config keys an auth-failing server needs.
+
+    Re-homed into the EXIT-signal path: the dispatch result no longer flows back
+    through dispatch_flow (#195 made the confirmed/dispatched path go silent and
+    let EXIT signals drive the next ROOT turn), so without this a bad API key
+    returns the same error every cycle, the repeat window never resets, and the
+    #205 guard kills the goal instead of letting the LLM self-heal by calling
+    configure_server with the right key names.
+    """
+    if not _contains_auth_error(signal_text):
+        return ""
+
+    hint = ""
+    for sid in sorted(_server_ids_for_signals(app, signals, owning_goal)):
+        try:
+            manifest = await app.dispatch.get_server_manifest(sid)
+        except Exception as e:  # a hint is best-effort; never break the turn
+            logger.debug(f"Could not fetch manifest for {sid}: {e}")
+            continue
+        props = (manifest or {}).get("configurableProperties") or []
+        required_keys = [
+            p["key"] for p in props if isinstance(p, dict) and p.get("key")
+        ]
+        if not required_keys:
+            continue
+        key_list = ", ".join(required_keys)
+        example = ", ".join(f'"{k}": "<value>"' for k in required_keys)
+        hint += (
+            f"\nCONFIG_HINT: {sid} requires configuration."
+            f"\n  Required key(s): {key_list}"
+            f'\n  Call: {{"action": "configure_server", "server_id": "{sid}", '
+            f'"config": {{{example}}}}}'
+        )
+    return hint
+
+
 async def on_dispatch_signal(app: Any, logger: Logger, signal: dict[str, Any]) -> None:
     # Extract EventMerger enrichment keys before passing the signal downstream.
     remind_completed = signal.pop("_remind_completed", False)
@@ -115,6 +199,13 @@ async def on_dispatch_signal(app: Any, logger: Logger, signal: dict[str, Any]) -
             f"finished before the LLM was reached.\n"
             f"EXIT_DATA: {compact_payload_for_llm(exit_data)}"
         )
+
+    signal_text = json.dumps(signal)
+    if exit_data is not None:
+        signal_text += compact_payload_for_llm(exit_data)
+    context += await _config_hint_for_signals(
+        app, logger, [signal], owning_goal, signal_text
+    )
 
     response = await ask_llm(app, logger, context, tag="root", mode="root")
     await app._act_on_root_response(response)
@@ -170,6 +261,10 @@ async def on_dispatch_signals(
         context = build_root_context(app, logger)
         context += f"\nSIGNALS: {json.dumps(signals)}"
 
+    context += await _config_hint_for_signals(
+        app, logger, signals, owning_goal, json.dumps(signals)
+    )
+
     response = await ask_llm(app, logger, context, tag="root", mode="root")
     await app._act_on_root_response(response)
 
@@ -197,7 +292,7 @@ async def on_confirmation_response(
                 app,
                 {
                     "type": "confirmation_list",
-                    "confirmations": app.confirmation.list_pending(),
+                    "confirmations": enrich_pending_with_goals(app),
                 },
             )
         )

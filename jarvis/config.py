@@ -16,8 +16,18 @@ else:
 
 
 class Config:
-    # Models base directory
-    MODELS_DIR = os.getenv("MODELS_DIR", "models")
+    from .platform import current as _platform
+
+    # Models base directory. Accepts the legacy MODELS_DIR name and the
+    # JARVIS_MODELS_DIR name packaging/jarvis.service actually sets (#171 —
+    # those two were never the same var, so the systemd-installed daemon
+    # never saw its model dir). Defaults to the platform data dir rather
+    # than a cwd-relative "models", which broke depending on launch cwd.
+    MODELS_DIR = (
+        os.getenv("MODELS_DIR")
+        or os.getenv("JARVIS_MODELS_DIR")
+        or str(_platform.data_dir() / "models")
+    )
 
     # Voice Provider Configuration
     STT_PROVIDER = os.getenv("STT_PROVIDER", "vosk")  # "vosk" (add more later)
@@ -235,6 +245,26 @@ class Config:
         os.path.join(JARVIS_DATA_DIR, "jarvis.sock"),
     )
 
+    # OpenAI-compatible local HTTP endpoint (opt-in, off by default).
+    # SECURITY-SENSITIVE: this is a TCP listener, unlike every other JARVIS
+    # IPC surface (see core/socket_security.py's docstring). See
+    # jarvis/server/openai_compat.py and docs/SECURITY-ARCHITECTURE.md
+    # before changing any of these defaults.
+    OPENAI_SERVER_ENABLED = (
+        os.getenv("JARVIS_OPENAI_SERVER_ENABLED", "false").lower() == "true"
+    )
+    OPENAI_SERVER_HOST = os.getenv("JARVIS_OPENAI_SERVER_HOST", "127.0.0.1")
+    OPENAI_SERVER_PORT = int(os.getenv("JARVIS_OPENAI_SERVER_PORT", "8317"))
+    # A second, separate opt-in required to bind anything other than
+    # loopback — changing OPENAI_SERVER_HOST alone is not enough.
+    OPENAI_SERVER_ALLOW_NONLOCAL = (
+        os.getenv("JARVIS_OPENAI_SERVER_ALLOW_NONLOCAL", "false").lower() == "true"
+    )
+    OPENAI_SERVER_TOKEN_FILE = os.getenv(
+        "JARVIS_OPENAI_SERVER_TOKEN_FILE",
+        os.path.join(_DEFAULT_CONFIG_DIR, "openai_server_token"),
+    )
+
     # Threat Level Access (TLA) Confirmation
     # - "allow_all": never ask, run everything (power users / trusted environments)
     # - "smart":     only ask when tool has confirmation_required=true (default)
@@ -304,6 +334,8 @@ Valid formats:
 
 {{"action": "analyze_image", "path": "/absolute/image/path.png", "query": "what to look for", "goal_updates": []}}
 
+{{"action": "status", "goal_id": "<optional goal id, omit for all>", "goal_updates": []}}
+
 {{"action": "done", "summary": "result summary"}}
 
 The very first character must be {{ and the very last must be }}.
@@ -321,6 +353,10 @@ store — Remember a personal fact or preference.
 recall — Recall stored facts by exact theme name.
 search_memory — Search all memories by meaning. Use when you need context.
 list_memory — List all stored memory themes.
+status — Check live/held task state instead of guessing. Use before claiming a task
+  "is still running" or "finished" without a signal, and to check on a fire_wake=false
+  batch's slow straggler without dispatching a no-op task. Omit "goal_id" for every
+  active goal, or pass one (from GOALS/GOAL_STATE) to scope the read.
 {data_consent_note}
 --- Tool use (multi-step) ---
 
@@ -457,8 +493,15 @@ analyze_image — Analyze an image with a vision-capable model; use when the use
     "goal_updates": []
 }}
 
+{{
+    "action": "status",
+    "goal_id": "<optional goal id from GOALS, omit for all active goals>",
+    "goal_updates": []
+}}
+
 --- Context ---
-You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT.
+You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT,
+STATUS_RESULT (from the status action — live task state, plus HELD_OUTPUT for anything done-but-held).
 Memory results: STORE_RESULT, RECALL_RESULT, SEARCH_MEMORY_RESULT, LIST_MEMORY_RESULT.
 RELEVANT MEMORIES may be included automatically (RAG).
 Include goal_updates in respond: "completed" or "failed" with result.
@@ -507,6 +550,10 @@ OS: {system} {release} ({machine}), Shell: {shell}
 
 respond — Direct reply. Use for chat, greetings, or after a result comes back.
 Memory is disabled. Do not use store, recall, search_memory, or list_memory.
+status — Check live/held task state instead of guessing. Use before claiming a task
+  "is still running" or "finished" without a signal, and to check on a fire_wake=false
+  batch's slow straggler without dispatching a no-op task. Omit "goal_id" for every
+  active goal, or pass one (from GOALS/GOAL_STATE) to scope the read.
 
 --- Tool use (multi-step) ---
 
@@ -608,8 +655,15 @@ analyze_image — Analyze an image with a vision-capable model; use when the use
     "goal_updates": []
 }}
 
+{{
+    "action": "status",
+    "goal_id": "<optional goal id from GOALS, omit for all active goals>",
+    "goal_updates": []
+}}
+
 --- Context ---
-You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT.
+You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT,
+STATUS_RESULT (from the status action — live task state, plus HELD_OUTPUT for anything done-but-held).
 Include goal_updates in respond: "completed" or "failed" with result.
 DISPATCH_RESULT shows only the signals for YOUR CURRENT BATCH. EXIT signals in it confirm
 success or failure. No EXIT yet means tasks are still running.

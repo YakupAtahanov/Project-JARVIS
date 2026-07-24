@@ -33,6 +33,8 @@ VALID_ACTIONS = {
     "list_memory",
     # Root — vision (delegates to a vision-capable provider in the pool)
     "analyze_image",
+    # Root — read-only task/goal introspection (#191)
+    "status",
     # Dispatch subsystem
     "plan",
     "search",
@@ -143,6 +145,8 @@ class TaskParser:
             return f", query='{query}', top_k={result.get('top_k', 5)}, offset={offset}"
         if action == "analyze_image":
             return f", path={result.get('path')}"
+        if action == "status":
+            return f", goal_id={result.get('goal_id')}"
         return ""
 
 
@@ -235,6 +239,22 @@ def _parse_configure_server(response: Dict[str, Any]) -> Dict[str, Any]:
         "action": "configure_server",
         "server_id": str(server_id),
         "config": {str(k): str(v) for k, v in config.items()},
+        "goal_updates": response.get("goal_updates", []),
+    }
+
+
+@_parser("status")
+def _parse_status(response: Dict[str, Any]) -> Dict[str, Any]:
+    """Read-only introspection of live/held tasks (#191).
+
+    ``goal_id`` is optional — omit it to see every active goal; supply it
+    (from GOAL_STATE/ACTIVE_GOALS context) to scope the read to one goal's
+    own task_pids.
+    """
+    goal_id = response.get("goal_id")
+    return {
+        "action": "status",
+        "goal_id": str(goal_id) if goal_id else None,
         "goal_updates": response.get("goal_updates", []),
     }
 

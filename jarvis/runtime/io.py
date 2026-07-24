@@ -45,6 +45,14 @@ async def handle_socket_connection(
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle one input socket connection; route lines into the event loop."""
+    if not await platform.ipc_verify_peer(reader, writer):
+        logger.warning("JARVIS: Rejected socket connection — peer verification failed")
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return
     try:
         while app._running:
             line = await reader.readline()
@@ -80,6 +88,24 @@ async def handle_socket_connection(
             pass
 
 
+def enrich_pending_with_goals(app: Any) -> list[dict[str, Any]]:
+    """list_pending() plus each item's owning goal description (#192).
+
+    ``session_id`` is the goal id (#190); resolve it here rather than in
+    ConfirmationManager, which has no GoalManager reference.
+    """
+    pending = app.confirmation.list_pending()
+    goals = getattr(app, "goals", None)
+    for item in pending:
+        goal = (
+            goals.get_goal(item["session_id"])
+            if goals and item.get("session_id")
+            else None
+        )
+        item["goal_description"] = goal.description if goal else None
+    return pending
+
+
 async def _handle_confirmation_query(
     app: Any, msg: dict, writer: asyncio.StreamWriter
 ) -> bool:
@@ -95,7 +121,7 @@ async def _handle_confirmation_query(
             writer,
             {
                 "type": "confirmation_list",
-                "confirmations": app.confirmation.list_pending(),
+                "confirmations": enrich_pending_with_goals(app),
             },
         )
         return True
@@ -270,6 +296,15 @@ async def handle_gui_connection(
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle a bidirectional GUI client connection."""
+    if not await platform.ipc_verify_peer(reader, writer):
+        logger.warning("JARVIS: Rejected GUI connection — peer verification failed")
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return
+
     app._gui_clients[writer] = DEFAULT_CLIENT_LABEL
     logger.info(f"JARVIS: GUI client connected ({len(app._gui_clients)} total)")
 
