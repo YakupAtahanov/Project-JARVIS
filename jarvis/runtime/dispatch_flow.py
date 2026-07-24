@@ -473,6 +473,46 @@ async def _collect_server_config(app: Any, logger: Logger, server_id: str) -> No
         )
 
 
+# Manifest-derived stateful flags, cached for the daemon's lifetime — the flag
+# is a static property of an installed server and must not cost a manifest read
+# per dispatch. Empty/failed lookups are NOT cached, so a server installed
+# mid-session (or a transient read failure) is retried on the next dispatch
+# instead of being pinned to the one-shot path until restart.
+_STATEFUL_BY_SERVER: dict[str, bool] = {}
+
+
+async def _stamp_stateful_tasks(
+    app: Any, logger: Logger, tasks: list[dict[str, Any]]
+) -> None:
+    """Set stateful=True on tasks whose server manifest declares it (#206)."""
+    for task in tasks:
+        server_id = task.get("server")
+        if not isinstance(server_id, str) or not server_id or "stateful" in task:
+            continue
+        if server_id not in _STATEFUL_BY_SERVER:
+            try:
+                manifest = await app.dispatch.get_server_manifest(server_id)
+            except Exception as e:
+                logger.warning(
+                    f"JARVIS: stateful lookup failed for '{server_id}' ({e}); "
+                    f"dispatching one-shot this time"
+                )
+                continue
+            if not isinstance(manifest, dict) or not manifest or "error" in manifest:
+                logger.debug(
+                    f"JARVIS: no readable manifest for '{server_id}'; "
+                    f"stateful undetermined, dispatching one-shot this time"
+                )
+                continue
+            _STATEFUL_BY_SERVER[server_id] = bool(manifest.get("stateful"))
+        if _STATEFUL_BY_SERVER[server_id]:
+            task["stateful"] = True
+            logger.debug(
+                f"JARVIS: task {server_id}/{task.get('tool')} marked stateful "
+                f"(manifest-derived)"
+            )
+
+
 async def dispatch_send(
     app: Any,
     logger: Logger,
@@ -531,6 +571,13 @@ async def dispatch_send(
                 if len(parts) >= 2:
                     params["command"] = parts[0]
                     params["args"] = parts[1:]
+
+    # Stamp stateful from the server manifest (#206) BEFORE the confirmation
+    # gate so the flag also rides on approved_tasks held by a pending
+    # confirmation. The LLM is deliberately not responsible for this: a
+    # forgotten flag silently degrades a stateful server (browser, REPL) to
+    # the one-shot lifecycle that loses its state between calls.
+    await _stamp_stateful_tasks(app, logger, tasks)
 
     approved_tasks: list[dict[str, Any]] = []
     tools_needing_confirmation: list[dict[str, Any]] = []
