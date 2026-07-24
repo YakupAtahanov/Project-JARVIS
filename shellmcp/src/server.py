@@ -189,7 +189,9 @@ def _open_command(target: str) -> str:
 
 async def open_app(target: str) -> str:
     """Open a file, URL, or application via the OS's default opener."""
-    env = _display_env() if sys.platform not in ("darwin", "win32") else os.environ.copy()
+    env = (
+        _display_env() if sys.platform not in ("darwin", "win32") else os.environ.copy()
+    )
     cmd = _open_command(target)
     try:
         proc = await asyncio.create_subprocess_shell(
