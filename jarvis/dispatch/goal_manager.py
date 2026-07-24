@@ -370,21 +370,24 @@ class GoalManager:
         forward progress (#205).
 
         Progress = the tool returned non-empty output that differs from the
-        last non-empty output of the same fingerprint. That clears the window
-        so a genuine poll-until-ready (changing content each poll) never trips,
-        while a stuck loop (empty or identical output every cycle) leaves the
-        window intact and trips on the count.
+        previously recorded output of the same fingerprint. Every EXIT's output
+        is recorded as the new baseline — including an empty one — so the FIRST
+        poll returning empty (the normal case: you poll precisely because the
+        job/page isn't ready yet) still seeds a baseline that the next non-empty
+        poll can differ from. With DISPATCH_REPEAT_LIMIT-1 EXITs preceding a
+        trip, dropping empty EXITs on the floor left a poll-until-ready whose
+        first result was empty (or a repeat) tripping while content was actually
+        changing. A stuck loop (empty or identical output every cycle) still
+        leaves the window intact and trips on the count.
         """
         pid = signal.get("pid")
         fingerprint = goal.dispatch_pid_fps.get(pid)
         if fingerprint is None:
             return
         output = _signal_output_text(signal)
-        if not output:
-            return
         prior = goal.dispatch_last_output.get(fingerprint)
         goal.dispatch_last_output[fingerprint] = output
-        if prior is not None and output != prior:
+        if output and prior is not None and output != prior:
             goal.recent_dispatches.clear()
             logger.debug(
                 f"GoalManager: Goal [{goal.id}] dispatch progressed; "

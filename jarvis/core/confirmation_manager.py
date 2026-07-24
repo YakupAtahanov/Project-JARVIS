@@ -134,6 +134,12 @@ class PendingConfirmation:
     # The owning goal's id (dispatch session_id) so the resume path can scope the
     # dispatch to the goal and link the returned PIDs back to it (#190).
     session_id: Optional[str] = None
+    # The full-batch dispatch fingerprint the repeat guard counted for this batch
+    # (dispatch_flow._batch_fingerprint). Carried so the resume path can re-link
+    # the approved PIDs to it and a later EXIT can reset the repeat window — the
+    # direct path does this at dispatch time, but a confirmed batch is sent later
+    # from on_confirmation_response and would otherwise never reset (#205).
+    fingerprint: Optional[str] = None
     # Retained so a later list_pending() query can describe what's waiting --
     # the original request only computes these locally otherwise.
     tool_names: List[str] = field(default_factory=list)
@@ -239,6 +245,7 @@ class ConfirmationManager:
         notification_silent: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
         session_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
     ) -> None:
         """Send confirmation notification and return immediately.
 
@@ -256,6 +263,10 @@ class ConfirmationManager:
             notification_silent: Suppress desktop notification.
             timeout: Seconds before auto-deny. 0 (the default) means never
                 auto-deny — the confirmation stays pending until answered (#185).
+            session_id: Owning goal id, stored so the resume path can rescope.
+            fingerprint: Repeat-guard batch fingerprint, stored so the resume
+                path can re-link approved PIDs and let a later EXIT reset the
+                repeat window (#205).
         """
         # Build a human-readable summary of tools needing confirmation. The
         # summary now carries the actual command (#186), not just the tool name,
@@ -270,6 +281,7 @@ class ConfirmationManager:
             denied_tools=list(denied_tools),
             dispatch_context=dispatch_context,
             session_id=session_id,
+            fingerprint=fingerprint,
             tool_names=tool_names,
             tool_lines=tool_lines,
             confirm_details=list(tools_needing_confirmation),

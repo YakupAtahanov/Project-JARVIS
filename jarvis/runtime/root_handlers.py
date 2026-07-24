@@ -232,6 +232,16 @@ async def on_confirmation_response(
             pids = _extract_pids_from_result(result)
             if pids:
                 app.goals.link_tasks(pending.session_id, pids)
+                # Re-establish the pid -> fingerprint mapping the direct path sets
+                # at dispatch time (dispatch_flow.py). Without it the repeat guard
+                # can never see a confirmation-gated tool's EXIT as progress, so a
+                # genuinely advancing gated tool trips the guard (#205). Reuse the
+                # exact fingerprint record_dispatch counted (the full original
+                # batch), not one recomputed from the approved subset.
+                if pending.fingerprint:
+                    app.goals.link_dispatch_fingerprint(
+                        pending.session_id, pending.fingerprint, pids
+                    )
 
         send_error = isinstance(result, dict) and "error" in result
         # On the clean happy path (tasks accepted, nothing denied) go silent —

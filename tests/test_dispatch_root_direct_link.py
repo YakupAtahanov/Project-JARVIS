@@ -51,7 +51,7 @@ def test_direct_dispatch_scopes_goal_and_stays_silent(tmp_path, monkeypatch):
 
     seen = {}
 
-    async def _fake_send(app, logger, tasks, session_id=None):
+    async def _fake_send(app, logger, tasks, session_id=None, fingerprint=None):
         seen["session_id"] = session_id
         return {
             "output": (
@@ -77,7 +77,7 @@ def test_direct_dispatch_error_still_drives_a_turn(tmp_path, monkeypatch):
     goals = GoalManager(archive_dir=str(tmp_path))
     goals.add_goal("do a thing")
 
-    async def _fake_send(app, logger, tasks, session_id=None):
+    async def _fake_send(app, logger, tasks, session_id=None, fingerprint=None):
         return {"error": "Dispatch not connected"}
 
     async def _fake_ask(app, logger, context, **k):

@@ -58,10 +58,11 @@ class _App:
 def _sender(state):
     """A fake dispatch_send that hands back an incrementing INIT PID."""
 
-    async def _fake_send(app, logger, tasks, session_id=None):
+    async def _fake_send(app, logger, tasks, session_id=None, fingerprint=None):
         state["pid"] += 1
         pid = state["pid"]
         state["sends"] += 1
+        state["last_fingerprint"] = fingerprint
         return {
             "output": (
                 f"Signal window (last 1):\n" f"[10:00:00] PID {pid} INIT s/t {{}}\n"
@@ -240,6 +241,61 @@ def test_poll_until_ready_with_changing_exits_does_not_trip(tmp_path, monkeypatc
     assert state["sends"] == len(progress)
 
 
+@pytest.mark.unit
+def test_poll_until_ready_empty_first_exit_does_not_trip(tmp_path, monkeypatch):
+    """The first poll returns empty (the normal case — the job/page isn't ready
+    yet), then content starts changing. The empty EXIT must seed a baseline so
+    the next non-empty EXIT registers as progress; otherwise the window never
+    resets and the guard trips while the tool is really advancing (#205)."""
+    state = {"pid": 1, "sends": 0}
+    _patch(monkeypatch, state, limit=3)
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    gm.add_goal("wait for job")
+    app = _App(gm)
+
+    poll = [{"server": "ci", "tool": "check_status", "params": {"job": 7}}]
+    progress = ["", "10%", "25%", "50%"]
+    for text in progress:
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, poll, depth=0))
+        gm.update_from_signal(_exit(state["pid"], output=text))
+
+    assert app.output_manager.responses == []
+    assert state["sends"] == len(progress)
+
+
+@pytest.mark.unit
+def test_guard_respond_resets_history_when_configured(tmp_path, monkeypatch):
+    """With RESET_HISTORY_AFTER_RESPONSE on, a normal respond clears the LLM
+    conversation, so the guard's short-circuit respond must too — otherwise the
+    bloated loop context that tripped the guard survives into the next turn,
+    the opposite of what the config asks (#205)."""
+    state = {"pid": 1, "sends": 0}
+    _patch(monkeypatch, state, limit=3)
+    monkeypatch.setattr(dispatch_flow, "ask_llm", _boom("guard must not call the LLM"))
+    monkeypatch.setattr(Config, "RESET_HISTORY_AFTER_RESPONSE", True)
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    gm.add_goal("fetch page")
+    app = _App(gm)
+
+    resets = {"n": 0}
+
+    class _LLM:
+        def reset_history(self):
+            resets["n"] += 1
+
+    app.llm = _LLM()
+
+    for _ in range(5):
+        if app.output_manager.responses:
+            break
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _nav(), depth=0))
+
+    assert app.output_manager.responses, "guard never tripped"
+    assert resets["n"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Progress detection is nonce-independent (boundary-wrapped output)
 # ---------------------------------------------------------------------------
@@ -301,6 +357,97 @@ def test_changed_inner_content_resets_window(tmp_path):
         }
     )
     assert goal.recent_dispatches == []
+
+
+# ---------------------------------------------------------------------------
+# Confirmation-gated dispatches must reset the window across the approval cycle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_confirmation_gated_poll_until_ready_does_not_trip(tmp_path, monkeypatch):
+    """A confirmation-gated tool dispatched with identical params, approved on
+    every cycle, each approved run returning changing non-empty content, must
+    NOT trip the guard.
+
+    The gate makes dispatch_send return awaiting_confirmation before the direct
+    path links the fingerprint, and the approved batch is sent later from
+    on_confirmation_response. Unless the fingerprint survives that round-trip and
+    is re-linked to the approved PIDs, the EXIT can never reset the window and a
+    genuinely progressing gated tool short-circuits (#205)."""
+    from jarvis.core.confirmation_manager import ConfirmationManager
+    from jarvis.runtime import root_handlers
+
+    monkeypatch.setattr(Config, "DISPATCH_REPEAT_LIMIT", 3)
+    monkeypatch.setattr(Config, "CONFIRMATION_MODE", "ask_all")
+    monkeypatch.setattr(dispatch_flow, "emit_activity", lambda *a, **k: None)
+    monkeypatch.setattr(root_handlers, "emit_activity", lambda *a, **k: None)
+
+    conf = ConfirmationManager()
+
+    async def _no_notify(*a, **k):
+        # No live channel in the test — leave the request pending; the test
+        # drives the approval explicitly.
+        pass
+
+    monkeypatch.setattr(conf, "_send_notification", _no_notify)
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("run migrations step by step")
+
+    state = {"pid": 1}
+
+    class _Dispatch:
+        is_connected = True
+
+        async def list_server_tools(self, server_id):
+            return {"tools": [{"name": "run_migration"}]}
+
+        async def send_tasks(self, tasks, session_id=None):
+            state["pid"] += 1
+            return {
+                "output": (
+                    f"Signal window (last 1):\n"
+                    f"[10:00:00] PID {state['pid']} INIT db/run_migration {{}}\n"
+                )
+            }
+
+    class _ConfApp:
+        def __init__(self):
+            self.goals = gm
+            self.dispatch = _Dispatch()
+            self.confirmation = conf
+            self.contextor = None
+            self.llm = object()  # not None; happy path never calls it
+            self._gui_clients = None
+            self.output_manager = _OutputManager()
+            self.acted = []
+
+        async def _act_on_root_response(self, response, depth=0):
+            self.acted.append((response, depth))
+
+    app = _ConfApp()
+
+    task = [{"server": "db", "tool": "run_migration", "params": {"step": "next"}}]
+    outputs = ["applied 0001", "applied 0002", "applied 0003", "applied 0004"]
+
+    for text in outputs:
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, task, depth=0))
+        if app.output_manager.responses:
+            break  # guard tripped — the bug; assertion below fails cleanly
+        # Gated: nothing has run yet, exactly one confirmation is pending.
+        req_id = conf.list_pending()[0]["id"]
+        asyncio.run(
+            root_handlers.on_confirmation_response(
+                app, _LOG, {"id": req_id, "approved": True}
+            )
+        )
+        gm.update_from_signal(_exit(state["pid"], output=text))
+
+    # Every approved run made real progress, so the guard must not have tripped.
+    assert app.output_manager.responses == []
+    assert app.acted == []
+    assert gm.get_all_goals() == [goal]
 
 
 # ---------------------------------------------------------------------------

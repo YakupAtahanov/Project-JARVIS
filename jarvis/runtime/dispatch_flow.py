@@ -78,6 +78,12 @@ def _short_circuit_repeat(
         goal_id, reason=f"dispatch repeat guard: {label} made no progress"
     )
     app.goals.dismiss_failed()
+    # Mirror the ROOT respond tail (root_actions.py): when history reset is on,
+    # a normal respond clears the LLM conversation, so the guard's respond must
+    # too — otherwise the bloated looping context that tripped the guard survives
+    # into the next user turn, the opposite of what the config asks for (#205).
+    if Config.RESET_HISTORY_AFTER_RESPONSE:
+        app.llm.reset_history()
 
 
 def _extract_pids_from_result(result: Any) -> list[int]:
@@ -473,8 +479,15 @@ async def dispatch_send(
     tasks: list[dict[str, Any]],
     dispatch_context: Any = None,
     session_id: Optional[str] = None,
+    fingerprint: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Low-level send to dispatch adapter, gated by TLA confirmation."""
+    """Low-level send to dispatch adapter, gated by TLA confirmation.
+
+    fingerprint is the repeat-guard batch fingerprint the caller already counted
+    (dispatch_execute_tasks). It is threaded onto the pending confirmation so the
+    resume path can re-link the approved PIDs to it — without that, a
+    confirmation-gated tool's EXIT can never reset the repeat window (#205).
+    """
     if not app.dispatch.is_connected:
         emit_activity(app, "Dispatch is unavailable right now.", kind="dispatch")
         return {"error": "Dispatch not connected"}
@@ -562,6 +575,7 @@ async def dispatch_send(
         notification_silent=notification_silent,
         timeout=Config.CONFIRMATION_TIMEOUT,
         session_id=session_id,
+        fingerprint=fingerprint,
     )
 
     tool_names = [t["tool_name"] for t in tools_needing_confirmation]
@@ -632,7 +646,9 @@ async def dispatch_execute_tasks(
             _short_circuit_repeat(app, logger, goal_id, tasks)
             return
 
-    result = await dispatch_send(app, logger, tasks, session_id=goal_id)
+    result = await dispatch_send(
+        app, logger, tasks, session_id=goal_id, fingerprint=fingerprint
+    )
 
     if isinstance(result, dict) and result.get("awaiting_confirmation"):
         logger.info(

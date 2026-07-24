@@ -106,6 +106,43 @@ def test_confirmation_resume_links_pids_to_goal(tmp_path, monkeypatch):
     assert goals.find_goal_by_task_pid(7) is goal
 
 
+def test_confirmation_resume_relinks_dispatch_fingerprint(tmp_path, monkeypatch):
+    """#205 — the resume path must re-establish the pid -> fingerprint mapping the
+    direct dispatch path sets at dispatch time. Without it a confirmation-gated
+    tool's EXIT can never be recognised as progress, so a genuinely advancing
+    gated tool trips the repeat guard."""
+    goals = GoalManager(archive_dir=str(tmp_path))
+    goal = goals.add_goal("apply the next migration step")
+
+    conf = ConfirmationManager()
+    conf._pending["r1"] = PendingConfirmation(
+        request_id="r1",
+        tasks=[_task()],
+        approved_tasks=[],
+        session_id=goal.id,
+        fingerprint="fp-batch",
+    )
+
+    app = _FakeApp(goals, conf)
+    monkeypatch.setattr(root_handlers, "build_root_context", lambda a, l, **k: "")
+    monkeypatch.setattr(root_handlers, "emit_activity", lambda *a, **k: None)
+
+    async def _fake_ask(a, l, c, **k):
+        return {"action": "respond", "output": "ok"}
+
+    monkeypatch.setattr(root_handlers, "ask_llm", _fake_ask)
+
+    asyncio.run(
+        root_handlers.on_confirmation_response(
+            app, _LOG, {"id": "r1", "approved": True}
+        )
+    )
+
+    # PID 7 (from the fake send window) is now mapped to the counted fingerprint,
+    # so a later EXIT for it can reset the repeat window.
+    assert goal.dispatch_pid_fps.get(7) == "fp-batch"
+
+
 def test_confirmation_resume_without_goal_does_not_crash(tmp_path, monkeypatch):
     # A confirmation with no owning goal (session_id=None) must still resume.
     goals = GoalManager(archive_dir=str(tmp_path))
