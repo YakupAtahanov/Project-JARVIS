@@ -61,7 +61,9 @@ class Goal:
     timer_pid: Optional[int] = None
     defer_count: int = 0
     deferred_at: Optional[float] = None
-    recent_dispatches: List[str] = field(default_factory=list)  # rolling fingerprint window (#205)
+    recent_dispatches: List[str] = field(
+        default_factory=list
+    )  # rolling fingerprint window (#205)
 
     def to_context(self) -> Dict[str, Any]:
         """Flat serialization for LLM context (no children — use get_goal_context)."""
@@ -138,7 +140,9 @@ class GoalManager:
             new_pids = [p for p in pids if p not in goal.task_pids]
             goal.task_pids.extend(new_pids)
             goal.status = GoalStatus.ACTIVE
-            logger.info(f"GoalManager: Goal [{goal_id}] linked to PIDs {new_pids} (deduped)")
+            logger.info(
+                f"GoalManager: Goal [{goal_id}] linked to PIDs {new_pids} (deduped)"
+            )
 
     def record_dispatch(self, goal_id: str, fingerprint: str) -> int:
         """Record a dispatch fingerprint; return how many times it appears in the window."""
@@ -147,7 +151,9 @@ class GoalManager:
             return 0
         goal.recent_dispatches.append(fingerprint)
         if len(goal.recent_dispatches) > Config.DISPATCH_REPEAT_WINDOW:
-            goal.recent_dispatches = goal.recent_dispatches[-Config.DISPATCH_REPEAT_WINDOW:]
+            goal.recent_dispatches = goal.recent_dispatches[
+                -Config.DISPATCH_REPEAT_WINDOW :
+            ]
         return goal.recent_dispatches.count(fingerprint)
 
     def update_strategy(self, goal_id: str, strategy: str):

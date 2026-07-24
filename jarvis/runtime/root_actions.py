@@ -454,7 +454,9 @@ async def act_on_root_response(
         if "tasks" in parsed:
             tasks = parsed["tasks"]
             if not tasks:
-                logger.debug("JARVIS: empty dispatch tasks — no-op acknowledge, waiting for signals")
+                logger.debug(
+                    "JARVIS: empty dispatch tasks — no-op acknowledge, waiting for signals"
+                )
             else:
                 await app._dispatch_execute_tasks(tasks, depth)
         else:

@@ -248,7 +248,10 @@ async def on_confirmation_response(
             # Tasks started. EXIT signals drive the next ROOT turn via on_dispatch_signal.
             # Asking LLM here (before EXITs) duplicates the turn and causes turn storms (#195).
             from .dispatch_flow import emit_activity
-            emit_activity(app, "Tasks dispatched, waiting for results…", kind="dispatch")
+
+            emit_activity(
+                app, "Tasks dispatched, waiting for results…", kind="dispatch"
+            )
             if pending.denied_tools:
                 denied_list = ", ".join(pending.denied_tools)
                 logger.info(f"JARVIS: Confirmation — denied tools: {denied_list}")

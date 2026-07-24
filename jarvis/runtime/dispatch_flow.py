@@ -545,7 +545,9 @@ async def dispatch_send(
             continue
         if server_id not in _manifest_cache:
             try:
-                _manifest_cache[server_id] = await app.dispatch.get_server_manifest(server_id)
+                _manifest_cache[server_id] = await app.dispatch.get_server_manifest(
+                    server_id
+                )
             except Exception:
                 _manifest_cache[server_id] = {}
         if _manifest_cache.get(server_id, {}).get("stateful"):
@@ -650,7 +652,11 @@ def _dispatch_fingerprint(tasks: list[dict[str, Any]]) -> str:
     parts = []
     for t in tasks:
         key = json.dumps(
-            {"server": t.get("server"), "tool": t.get("tool"), "params": t.get("params", {})},
+            {
+                "server": t.get("server"),
+                "tool": t.get("tool"),
+                "params": t.get("params", {}),
+            },
             sort_keys=True,
         )
         parts.append(key)
@@ -695,10 +701,14 @@ async def dispatch_execute_tasks(
                     )
                 }
             )
-            app.goals.fail_goal(goal.id, reason=f"Repeat guard: {tool_label} made no progress")
+            app.goals.fail_goal(
+                goal.id, reason=f"Repeat guard: {tool_label} made no progress"
+            )
             return
 
-    result = await dispatch_send(app, logger, tasks, session_id=goal.id if goal else None)
+    result = await dispatch_send(
+        app, logger, tasks, session_id=goal.id if goal else None
+    )
 
     if isinstance(result, dict) and result.get("awaiting_confirmation"):
         logger.info(
@@ -724,7 +734,9 @@ async def dispatch_execute_tasks(
         # and drive the next ROOT turn. Asking LLM here (before any EXIT) duplicates
         # the turn and produces the empty-dispatch / turn-storm loop (#195).
         emit_activity(app, "Tasks dispatched, waiting for results…", kind="dispatch")
-        logger.debug(f"JARVIS: dispatch_execute_tasks — silent return, signal path drives next turn")
+        logger.debug(
+            f"JARVIS: dispatch_execute_tasks — silent return, signal path drives next turn"
+        )
 
 
 async def do_kill(app: Any, logger: Logger, pids: Any) -> None:

@@ -23,8 +23,10 @@ class Config:
     # those two were never the same var, so the systemd-installed daemon
     # never saw its model dir). Defaults to the platform data dir rather
     # than a cwd-relative "models", which broke depending on launch cwd.
-    MODELS_DIR = os.getenv("MODELS_DIR") or os.getenv("JARVIS_MODELS_DIR") or str(
-        _platform.data_dir() / "models"
+    MODELS_DIR = (
+        os.getenv("MODELS_DIR")
+        or os.getenv("JARVIS_MODELS_DIR")
+        or str(_platform.data_dir() / "models")
     )
 
     # Voice Provider Configuration

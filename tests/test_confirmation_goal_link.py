@@ -59,6 +59,17 @@ class _FakeDispatch:
         }
 
 
+class _FakeOutputManager:
+    def __init__(self):
+        self.activities = []
+
+    def emit_activity(self, text, kind=None):
+        self.activities.append(text)
+
+    def handle_response(self, response):
+        pass
+
+
 class _FakeApp:
     def __init__(self, goals, confirmation):
         self.goals = goals
@@ -67,6 +78,7 @@ class _FakeApp:
         self.llm = object()  # not None
         self._gui_clients = None
         self.acted = None
+        self.output_manager = _FakeOutputManager()
 
     async def _act_on_root_response(self, response):
         self.acted = response
@@ -128,5 +140,9 @@ def test_confirmation_resume_without_goal_does_not_crash(tmp_path, monkeypatch):
             app, _LOG, {"id": "r2", "approved": True}
         )
     )
+    # session_id=None → dispatch was scoped to None (no goal to attach to)
     assert app.dispatch.session_id is None
-    assert app.acted == {"action": "respond", "output": "ok"}
+    # On success, the signal path drives the next ROOT turn — ask_llm is NOT
+    # called here (#195). The activity emission tells the UI tasks are running.
+    assert app.acted is None
+    assert any("dispatched" in a.lower() for a in app.output_manager.activities)
