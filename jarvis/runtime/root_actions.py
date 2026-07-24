@@ -365,14 +365,24 @@ async def act_on_root_response(
         err = parsed["error"]
         logger.warning(f"JARVIS: Root parse error: {err} — retrying with correction")
         context = build_root_context(app, logger)
-        context += (
-            f"\nYour last response had a format error: {err}\n"
-            "Fix the JSON and try again. Reminder:\n"
-            '  {"action": "search_tools", "capability": "<domain or service needed>", "goal_updates": []}\n'
-            '  {"action": "get_server_docs", "server_id": "<id from SEARCH_RESULTS>", "goal_updates": []}\n'
-            '  {"action": "respond", "output": "<message>", "goal_updates": []}\n'
-            "Do NOT wrap fields in a 'params' object. Output exactly one JSON object."
-        )
+        raw = parsed.get("raw", {})
+        raw_action = raw.get("action", "") if isinstance(raw, dict) else ""
+        if raw_action == "dispatch" or (isinstance(raw, dict) and "tasks" in raw):
+            context += (
+                f"\nYour last response had a format error: {err}\n"
+                "Fix the JSON and try again. For a dispatch, each task must use this exact schema:\n"
+                '  {"action": "dispatch", "tasks": [{"server": "<id>", "tool": "<name>", "params": {"<key>": "<value>"}}], "goal_updates": []}\n'
+                "All tool arguments go inside 'params'. Do NOT flatten them to the top level of the task object."
+            )
+        else:
+            context += (
+                f"\nYour last response had a format error: {err}\n"
+                "Fix the JSON and try again. Reminder:\n"
+                '  {"action": "search_tools", "capability": "<domain or service needed>", "goal_updates": []}\n'
+                '  {"action": "get_server_docs", "server_id": "<id from SEARCH_RESULTS>", "goal_updates": []}\n'
+                '  {"action": "respond", "output": "<message>", "goal_updates": []}\n'
+                "Output exactly one JSON object."
+            )
         retry_response = await ask_llm(
             app, logger, context, tag="root-retry-parse", mode="root"
         )
@@ -442,7 +452,11 @@ async def act_on_root_response(
 
     elif action == "dispatch":
         if "tasks" in parsed:
-            await app._dispatch_execute_tasks(parsed["tasks"], depth)
+            tasks = parsed["tasks"]
+            if not tasks:
+                logger.debug("JARVIS: empty dispatch tasks — no-op acknowledge, waiting for signals")
+            else:
+                await app._dispatch_execute_tasks(tasks, depth)
         else:
             logger.warning(
                 "JARVIS: dispatch action without tasks — ignored (use search_tools first)"

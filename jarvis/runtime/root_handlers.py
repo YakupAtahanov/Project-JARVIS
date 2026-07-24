@@ -233,18 +233,22 @@ async def on_confirmation_response(
             if pids:
                 app.goals.link_tasks(pending.session_id, pids)
 
-        context = build_root_context(app, logger)
-
         if isinstance(result, dict) and "error" in result:
+            # Send-level error: no signal will arrive, drive a ROOT turn now.
+            context = build_root_context(app, logger)
             context += f"\nDISPATCH_ERROR: {compact_payload_for_llm(result)}"
+            if pending.denied_tools:
+                denied_list = ", ".join(pending.denied_tools)
+                context += f"\nUSER_DENIAL: Action {denied_list} was denied by the user"
+            response = await ask_llm(
+                app, logger, context, tag="root-confirmation-error", mode="root"
+            )
+            await app._act_on_root_response(response)
         else:
-            context += f"\nDISPATCH_RESULT: {compact_payload_for_llm(result)}"
-
-        if pending.denied_tools:
-            denied_list = ", ".join(pending.denied_tools)
-            context += f"\nUSER_DENIAL: Action {denied_list} was denied by the user"
-
-        response = await ask_llm(
-            app, logger, context, tag="root-confirmation-result", mode="root"
-        )
-        await app._act_on_root_response(response)
+            # Tasks started. EXIT signals drive the next ROOT turn via on_dispatch_signal.
+            # Asking LLM here (before EXITs) duplicates the turn and causes turn storms (#195).
+            from .dispatch_flow import emit_activity
+            emit_activity(app, "Tasks dispatched, waiting for results…", kind="dispatch")
+            if pending.denied_tools:
+                denied_list = ", ".join(pending.denied_tools)
+                logger.info(f"JARVIS: Confirmation — denied tools: {denied_list}")

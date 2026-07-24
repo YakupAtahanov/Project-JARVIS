@@ -536,6 +536,21 @@ async def dispatch_send(
                     params["command"] = parts[0]
                     params["args"] = parts[1:]
 
+    # Stamp stateful:true on tasks whose server manifest declares stateful=true (#206).
+    # The daemon derives this from the registry manifest so the LLM never has to remember it.
+    _manifest_cache: dict[str, dict] = {}
+    for task in tasks:
+        server_id = task.get("server")
+        if not server_id or task.get("stateful"):
+            continue
+        if server_id not in _manifest_cache:
+            try:
+                _manifest_cache[server_id] = await app.dispatch.get_server_manifest(server_id)
+            except Exception:
+                _manifest_cache[server_id] = {}
+        if _manifest_cache.get(server_id, {}).get("stateful"):
+            task["stateful"] = True
+
     approved_tasks: list[dict[str, Any]] = []
     tools_needing_confirmation: list[dict[str, Any]] = []
 
@@ -630,6 +645,18 @@ def _contains_auth_error(text: str) -> bool:
     return any(p in text_lower for p in _AUTH_ERROR_PATTERNS)
 
 
+def _dispatch_fingerprint(tasks: list[dict[str, Any]]) -> str:
+    """Stable fingerprint for a batch of tasks: sorted (server, tool, params) tuples."""
+    parts = []
+    for t in tasks:
+        key = json.dumps(
+            {"server": t.get("server"), "tool": t.get("tool"), "params": t.get("params", {})},
+            sort_keys=True,
+        )
+        parts.append(key)
+    return "|".join(sorted(parts))
+
+
 async def dispatch_execute_tasks(
     app: Any,
     logger: Logger,
@@ -643,7 +670,35 @@ async def dispatch_execute_tasks(
         )
         return
 
-    result = await dispatch_send(app, logger, tasks)
+    active = app.goals.get_active_goals()
+    goal = active[-1] if active else None
+
+    # Per-goal dispatch repeat guard (#205): short-circuit when the same batch
+    # fingerprint has been issued too many times without making progress.
+    if goal:
+        fingerprint = _dispatch_fingerprint(tasks)
+        repeat_count = app.goals.record_dispatch(goal.id, fingerprint)
+        if repeat_count >= Config.DISPATCH_REPEAT_LIMIT:
+            sample = tasks[0] if tasks else {}
+            tool_label = f"{sample.get('server', '?')}.{sample.get('tool', '?')}"
+            logger.warning(
+                f"JARVIS: dispatch repeat guard tripped for goal [{goal.id}] "
+                f"— '{tool_label}' issued {repeat_count}× with no progress"
+            )
+            app.output_manager.handle_response(
+                {
+                    "output": (
+                        f"I've attempted to run `{tool_label}` {repeat_count} times "
+                        f"without making progress — the tool appears to be returning "
+                        f"no usable content. I've stopped retrying. "
+                        f"You may want to try a different approach or tool."
+                    )
+                }
+            )
+            app.goals.fail_goal(goal.id, reason=f"Repeat guard: {tool_label} made no progress")
+            return
+
+    result = await dispatch_send(app, logger, tasks, session_id=goal.id if goal else None)
 
     if isinstance(result, dict) and result.get("awaiting_confirmation"):
         logger.info(
@@ -653,46 +708,23 @@ async def dispatch_execute_tasks(
         return
 
     pids = _extract_pids_from_result(result)
-    if pids:
-        active = app.goals.get_active_goals()
-        if active:
-            app.goals.link_tasks(active[-1].id, pids)
+    if pids and goal:
+        app.goals.link_tasks(goal.id, pids)
 
-    app.llm.switch_mode("root")
-    context = build_root_context(app, logger)
     if isinstance(result, dict) and "error" in result:
+        # Send-level error (not a tool EXIT error): drive a ROOT turn now because
+        # no signal will arrive to drive it for us.
+        app.llm.switch_mode("root")
+        context = build_root_context(app, logger)
         context += f"\nDISPATCH_ERROR: {compact_payload_for_llm(result)}"
+        response = await ask_llm(app, logger, context, tag="root-dispatch-error")
+        await app._act_on_root_response(response, depth + 1)
     else:
-        trimmed = _trim_to_current_batch(result, len(tasks))
-        result_text = compact_payload_for_llm(trimmed)
-        context += f"\nDISPATCH_RESULT: {result_text}"
-
-        # When the exit payload contains auth/token errors, surface the exact
-        # env-var key names from each server's configurableProperties. Without
-        # this the LLM guesses the key from the error wording (e.g.
-        # "subscription_token" instead of "BRAVE_API_KEY").
-        if _contains_auth_error(result_text):
-            server_ids = {
-                t["server"] for t in tasks if isinstance(t, dict) and t.get("server")
-            }
-            for sid in server_ids:
-                manifest = await app.dispatch.get_server_manifest(sid)
-                props = manifest.get("configurableProperties") or []
-                if props:
-                    required_keys = [
-                        p["key"] for p in props if isinstance(p, dict) and p.get("key")
-                    ]
-                    if required_keys:
-                        key_list = ", ".join(required_keys)
-                        example = ", ".join(f'"{k}": "<value>"' for k in required_keys)
-                        context += (
-                            f"\nCONFIG_HINT: {sid} requires configuration."
-                            f"\n  Required key(s): {key_list}"
-                            f'\n  Call: {{"action": "configure_server", "server_id": "{sid}", "config": {{{example}}}}}'
-                        )
-
-    response = await ask_llm(app, logger, context, tag="root-dispatch-result")
-    await app._act_on_root_response(response, depth + 1)
+        # Tasks started successfully. EXIT signals will arrive via on_dispatch_signal
+        # and drive the next ROOT turn. Asking LLM here (before any EXIT) duplicates
+        # the turn and produces the empty-dispatch / turn-storm loop (#195).
+        emit_activity(app, "Tasks dispatched, waiting for results…", kind="dispatch")
+        logger.debug(f"JARVIS: dispatch_execute_tasks — silent return, signal path drives next turn")
 
 
 async def do_kill(app: Any, logger: Logger, pids: Any) -> None:

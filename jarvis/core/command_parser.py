@@ -267,10 +267,17 @@ def _parse_dispatch(response: Dict[str, Any]) -> Dict[str, Any]:
             "goal_updates": response.get("goal_updates", []),
         }
 
-    if not isinstance(tasks, list) or not tasks:
+    if not isinstance(tasks, list):
         return {
             "error": "Dispatch action requires 'intent' (routing) or non-empty 'tasks' (execution)",
             "raw": response,
+        }
+
+    if not tasks:
+        return {
+            "action": "dispatch",
+            "tasks": [],
+            "goal_updates": response.get("goal_updates", []),
         }
 
     validated_tasks = []

@@ -257,6 +257,13 @@ class Config:
     #          (lets external apps render their own confirmation UI)
     NOTIFICATION_SILENT = os.getenv("NOTIFICATION_SILENT", "false").lower() == "true"
 
+    # Per-goal dispatch repeat / progress guard (#205).
+    # When the same (server, tool, params) fingerprint appears this many times
+    # in the recent-dispatch window, the daemon short-circuits to a respond
+    # instead of dispatching again.
+    DISPATCH_REPEAT_LIMIT: int = int(os.getenv("DISPATCH_REPEAT_LIMIT", "3"))
+    DISPATCH_REPEAT_WINDOW: int = int(os.getenv("DISPATCH_REPEAT_WINDOW", "12"))
+
     # Timeout (seconds) for user to respond to a confirmation prompt before
     # auto-denying. 0 disables the timeout entirely -- pending confirmations
     # are tracked in a persistent, queryable list (CLI/socket) instead, so
@@ -384,6 +391,10 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     Set "fire_wake": false on EVERY task of a batch you want to answer ONCE, together (e.g.
     "check my python version AND update my system") — you are then woken a single time, when the
     whole batch has finished, with all results at once, instead of one partial reply per task.
+  ⚠ RULE — SYSTEM-SCOPE ELEVATION: Tools on system-scope servers (e.g. jarvis-shell-system) already
+    run with elevated privileges granted by dmcp via polkit. Send the plain command (e.g. `pacman -Syu`).
+    Do NOT prefix `sudo` or `pkexec` — sudo has no TTY/askpass and will fail; pkexec bypasses the
+    intended TLA gate. On a privilege error, report it; do not retry with sudo.
 
 --- Actions (exact format) ---
 
@@ -553,6 +564,10 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     Set "fire_wake": false on EVERY task of a batch you want to answer ONCE, together (e.g.
     "check my python version AND update my system") — you are then woken a single time, when the
     whole batch has finished, with all results at once, instead of one partial reply per task.
+  ⚠ RULE — SYSTEM-SCOPE ELEVATION: Tools on system-scope servers (e.g. jarvis-shell-system) already
+    run with elevated privileges granted by dmcp via polkit. Send the plain command (e.g. `pacman -Syu`).
+    Do NOT prefix `sudo` or `pkexec` — sudo has no TTY/askpass and will fail; pkexec bypasses the
+    intended TLA gate. On a privilege error, report it; do not retry with sudo.
 
 --- Actions (exact format) ---
 
