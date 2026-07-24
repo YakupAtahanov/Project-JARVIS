@@ -28,11 +28,38 @@ from typing import Any, Dict, List, Optional
 
 from ..config import Config
 from ..core.logger import get_logger
+from .boundary import verify_boundary
 
 logger = get_logger(__name__)
 
 _DEFAULT_ARCHIVE_DIR = Config.JARVIS_DATA_DIR
 _ARCHIVE_FILENAME = "goal_archive.jsonl"
+
+
+def _signal_output_text(signal: Dict[str, Any]) -> str:
+    """Extract an EXIT signal's tool output as a nonce-independent string.
+
+    The provenance boundary is keyed by a per-task CSPRNG nonce, so two EXITs
+    carrying identical content still differ byte-for-byte at the wrapper level.
+    Unwrap via the recorded nonce before comparing, otherwise every EXIT would
+    look like "new content" and the progress reset would defeat the guard.
+    """
+    data = signal.get("data")
+    if isinstance(data, dict):
+        text = data.get("output") or data.get("error") or ""
+        return text.strip() if isinstance(text, str) else ""
+
+    body = data
+    if not isinstance(body, str):
+        body = signal.get("message")
+    if not isinstance(body, str):
+        body = signal.get("output")
+    if not isinstance(body, str):
+        return ""
+
+    result = verify_boundary(body, signal.get("nonce"))
+    inner = result.inner if result.inner is not None else body
+    return inner.strip() if isinstance(inner, str) else ""
 
 
 class GoalStatus(Enum):
@@ -61,6 +88,14 @@ class Goal:
     timer_pid: Optional[int] = None
     defer_count: int = 0
     deferred_at: Optional[float] = None
+    # Dispatch repeat/progress guard (#205). recent_dispatches is a bounded
+    # rolling window of dispatch fingerprints; the two dicts let an EXIT that
+    # carries new content age the window out (progress), so legitimate
+    # poll-until-ready flows never trip. None of these reach to_context — they
+    # are guard bookkeeping, not LLM-facing state.
+    recent_dispatches: List[str] = field(default_factory=list)
+    dispatch_pid_fps: Dict[int, str] = field(default_factory=dict)
+    dispatch_last_output: Dict[str, str] = field(default_factory=dict)
 
     def to_context(self) -> Dict[str, Any]:
         """Flat serialization for LLM context (no children — use get_goal_context)."""
@@ -131,12 +166,48 @@ class GoalManager:
     # ------------------------------------------------------------------
 
     def link_tasks(self, goal_id: str, pids: List[int]):
-        """Attach dispatched task PIDs to a goal and mark it active."""
+        """Attach dispatched task PIDs to a goal and mark it active.
+
+        Dedupes: _extract_pids_from_result re-parses INIT lines out of
+        dispatch's rolling signal window, which still holds earlier tasks'
+        INITs, so each call re-offers prior PIDs. Extending blindly grew
+        task_pids as [2] -> [2,2,3] -> [2,2,3,2,3,4]; that list is emitted into
+        every goal-scoped LLM context, so keep only PIDs not already linked.
+        """
         goal = self._find_goal(goal_id)
         if goal:
-            goal.task_pids.extend(pids)
+            new_pids = [p for p in pids if p not in goal.task_pids]
+            goal.task_pids.extend(new_pids)
             goal.status = GoalStatus.ACTIVE
-            logger.info(f"GoalManager: Goal [{goal_id}] linked to PIDs {pids}")
+            logger.info(f"GoalManager: Goal [{goal_id}] linked to PIDs {new_pids}")
+
+    def record_dispatch(self, goal_id: str, fingerprint: str) -> int:
+        """Append a dispatch fingerprint to the goal's rolling window and return
+        how many times it occurs within that window (#205).
+
+        Window-count, not consecutive-equality: a repeating cycle like
+        navigate, snapshot, navigate, snapshot, navigate must still trip on
+        navigate reaching the limit even though no two are adjacent.
+        """
+        goal = self._find_goal(goal_id)
+        if not goal:
+            return 0
+        goal.recent_dispatches.append(fingerprint)
+        window = getattr(Config, "DISPATCH_REPEAT_WINDOW", 12)
+        if window > 0 and len(goal.recent_dispatches) > window:
+            del goal.recent_dispatches[:-window]
+        return goal.recent_dispatches.count(fingerprint)
+
+    def link_dispatch_fingerprint(
+        self, goal_id: str, fingerprint: str, pids: List[int]
+    ):
+        """Map dispatched PIDs to the fingerprint that produced them so a later
+        EXIT can tell whether that dispatch made progress (#205)."""
+        goal = self._find_goal(goal_id)
+        if not goal:
+            return
+        for pid in pids:
+            goal.dispatch_pid_fps[pid] = fingerprint
 
     def update_strategy(self, goal_id: str, strategy: str):
         """LLM updates its forward-looking plan for this goal."""
@@ -292,6 +363,33 @@ class GoalManager:
 
         if signal_type == "EXIT":
             logger.info(f"GoalManager: PID {pid} exited for goal [{goal.id}]")
+            self._note_dispatch_progress(goal, signal)
+
+    def _note_dispatch_progress(self, goal: "Goal", signal: Dict[str, Any]):
+        """Reset the repeat window when an EXIT shows this dispatch made
+        forward progress (#205).
+
+        Progress = the tool returned non-empty output that differs from the
+        last non-empty output of the same fingerprint. That clears the window
+        so a genuine poll-until-ready (changing content each poll) never trips,
+        while a stuck loop (empty or identical output every cycle) leaves the
+        window intact and trips on the count.
+        """
+        pid = signal.get("pid")
+        fingerprint = goal.dispatch_pid_fps.get(pid)
+        if fingerprint is None:
+            return
+        output = _signal_output_text(signal)
+        if not output:
+            return
+        prior = goal.dispatch_last_output.get(fingerprint)
+        goal.dispatch_last_output[fingerprint] = output
+        if prior is not None and output != prior:
+            goal.recent_dispatches.clear()
+            logger.debug(
+                f"GoalManager: Goal [{goal.id}] dispatch progressed; "
+                "repeat window reset"
+            )
 
     # ------------------------------------------------------------------
     # Archiving

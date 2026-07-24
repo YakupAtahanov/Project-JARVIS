@@ -156,6 +156,18 @@ class Config:
     DMCP_BINARY = os.getenv("DMCP_BINARY", "dmcp")  # Path to dmcp binary
     DISPATCH_TIMEOUT = int(os.getenv("DISPATCH_TIMEOUT", "60"))  # seconds
 
+    # Dispatch repeat/progress guard (#205). EXIT-driven ROOT turns re-enter at
+    # depth 0, so the synchronous MAX_CHAIN_DEPTH cap never bounds a tool that
+    # keeps returning no usable content across dispatch cycles — it loops until
+    # a provider read-timeout. Count how many times the same (server, tool,
+    # params) fingerprint recurs within one goal's recent-dispatch window and
+    # short-circuit to an informative respond once it hits the limit. Pure
+    # string work on a bounded per-goal list — no extra LLM calls.
+    # LIMIT counts occurrences within WINDOW (window-count, not consecutive, so
+    # an A,B,A,B,A cycle still trips on A).
+    DISPATCH_REPEAT_LIMIT = int(os.getenv("DISPATCH_REPEAT_LIMIT", "3"))
+    DISPATCH_REPEAT_WINDOW = int(os.getenv("DISPATCH_REPEAT_WINDOW", "12"))
+
     # Contextor (memory) binary — Rust subprocess over stdio
     CONTEXTOR_BINARY = os.getenv("CONTEXTOR_BINARY", "contextor")
 

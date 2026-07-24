@@ -19,6 +19,66 @@ from .root_context import build_root_context, compact_payload_for_llm
 # Signal window text line: "[14:11:04] PID 2 INIT server tool {...}"
 _PID_INIT_RE = re.compile(r"PID (\d+) INIT")
 
+# Field separators for dispatch fingerprints — control chars that can't collide
+# with server ids, tool names, or JSON payloads.
+_FP_FIELD_SEP = "\x1f"
+_FP_TASK_SEP = "\x1e"
+
+
+def _task_fingerprint(task: dict[str, Any]) -> str:
+    """Stable string over (server, tool, canonical params) for one task."""
+    server = str(task.get("server", ""))
+    tool = str(task.get("tool", ""))
+    params = task.get("params", {})
+    try:
+        params_str = json.dumps(params, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        params_str = repr(params)
+    return f"{server}{_FP_FIELD_SEP}{tool}{_FP_FIELD_SEP}{params_str}"
+
+
+def _batch_fingerprint(tasks: list[dict[str, Any]]) -> str:
+    """One fingerprint for a whole dispatch batch."""
+    return _FP_TASK_SEP.join(_task_fingerprint(t) for t in tasks)
+
+
+def _tool_labels(tasks: list[dict[str, Any]]) -> list[str]:
+    labels = []
+    for task in tasks:
+        label = f"`{task.get('server', '?')}.{task.get('tool', '?')}`"
+        if label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _short_circuit_repeat(
+    app: Any, logger: Logger, goal_id: str, tasks: list[dict[str, Any]]
+) -> None:
+    """Bail out of a no-progress dispatch loop with an informative respond (#205).
+
+    Mirrors the ROOT respond path (root_actions.py) so the user sees a real
+    answer, then fails and dismisses the goal so it stops re-driving.
+    """
+    labels = _tool_labels(tasks)
+    label = ", ".join(labels)
+    logger.warning(
+        f"JARVIS: Dispatch repeat guard tripped for goal [{goal_id}] on {label}"
+    )
+    message = (
+        f"I attempted to run {label} several times without making progress — "
+        "the tool appears to be returning no usable content (e.g. an empty page "
+        "snapshot). I've stopped retrying. You may want to try a different "
+        "approach or tool."
+    )
+    app.output_manager.handle_response({"output": message})
+    persist_assistant_turn(app, message)
+    if hasattr(app, "mcp_dispatch_docs"):
+        app.mcp_dispatch_docs.clear()
+    app.goals.fail_goal(
+        goal_id, reason=f"dispatch repeat guard: {label} made no progress"
+    )
+    app.goals.dismiss_failed()
+
 
 def _extract_pids_from_result(result: Any) -> list[int]:
     """
@@ -562,6 +622,16 @@ async def dispatch_execute_tasks(
     active = app.goals.get_active_goals()
     goal_id = active[-1].id if active else None
 
+    # Per-goal repeat/progress guard (#205). This choke point sees every ROOT
+    # dispatch; count identical (server, tool, params) dispatches within the
+    # goal and stop before re-sending a tool that keeps returning nothing.
+    fingerprint = _batch_fingerprint(tasks)
+    if goal_id:
+        count = app.goals.record_dispatch(goal_id, fingerprint)
+        if count >= Config.DISPATCH_REPEAT_LIMIT:
+            _short_circuit_repeat(app, logger, goal_id, tasks)
+            return
+
     result = await dispatch_send(app, logger, tasks, session_id=goal_id)
 
     if isinstance(result, dict) and result.get("awaiting_confirmation"):
@@ -584,6 +654,7 @@ async def dispatch_execute_tasks(
     pids = _extract_pids_from_result(result)
     if pids and goal_id:
         app.goals.link_tasks(goal_id, pids)
+        app.goals.link_dispatch_fingerprint(goal_id, fingerprint, pids)
     emit_activity(app, "Tasks dispatched; awaiting results…", kind="dispatch")
 
 
