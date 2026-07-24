@@ -329,10 +329,10 @@ Added in v1.0.0. Auto-detects OS at import time.
 | File | Role |
 |------|------|
 | `__init__.py` | `current` singleton — `LinuxPlatform`, `MacOSPlatform`, or `WindowsPlatform` |
-| `base.py` | `PlatformBase` ABC: `create_ipc_server`, `ipc_connect`, `ipc_secure`, `ipc_verify_owner`, `ipc_cleanup`, `config_dir`, `data_dir`, `send_desktop_notification`, `has_desktop_notifications`, `try_start_service`, `install_signal_handlers` |
-| `linux.py` | `AF_UNIX`, XDG paths, `notify-send`, `systemctl` |
-| `macos.py` | `AF_UNIX`, `~/Library/Application Support/`, `osascript`, `launchctl` |
-| `windows.py` | TCP `127.0.0.1` + port lockfile, `%APPDATA%`, PowerShell toast, direct spawn |
+| `base.py` | `BasePlatform` ABC: `create_ipc_server`, `ipc_connect`, `ipc_secure`, `ipc_verify_owner`, `ipc_verify_peer`, `ipc_cleanup`, `system_ipc_candidates`, `config_dir`, `data_dir`, `sidecar_search_dirs`/`resolve_sidecar`, `privileged_prefixes`, `askpass_helpers`/`find_askpass`/`elevate`, `grant_privilege`/`revoke_privilege`/`is_privilege_granted`, `open_command`, `send_desktop_notification`, `has_desktop_notifications`, `try_start_service`, `install_signal_handlers` |
+| `linux.py` | `AF_UNIX` + `SO_PEERCRED` peer check, XDG paths, `notify-send`, `systemctl`, `sudo -A` with a five-candidate askpass probe |
+| `macos.py` | `AF_UNIX` + `LOCAL_PEERCRED` peer check, `~/Library/Application Support/`, `osascript` (dialogs + an auto-installed askpass shim), `launchctl` |
+| `windows.py` | TCP `127.0.0.1` + port lockfile, per-startup `.token` file auth (`icacls`-restricted) checked accept-time, `%APPDATA%`/`%LOCALAPPDATA%`, `windows_toasts` WinRT toast with real Allow/Deny buttons (availability gated on the package importing), UAC-only elevation, direct spawn |
 
 All consumers (`runtime/io.py`, `cli.py`, `core/socket_security.py`, `core/confirmation_manager.py`, `llm/providers/ollama.py`, `config.py`, `runtime/lifecycle.py`) go through `from ..platform import current as platform`.
 
@@ -346,7 +346,7 @@ See `docs/SECURITY-ARCHITECTURE.md` for the full threat model and CVE context.
 
 1. **Daemon (TLA)** — `threat_level.py` classifies every tool call (max of host floor, manifest level, payload scan); `ConfirmationManager` gates >= ELEVATED calls per `CONFIRMATION_MODE`
 2. **Boundary** — dispatch wraps tool output in a per-task 128-bit CSPRNG nonce; the daemon verifies the wrapper (`jarvis/dispatch/boundary.py`) and treats unverified output as untrusted
-3. **IPC** — Unix sockets hardened to `0600` (Linux/macOS); ownership verified before connecting (`socket_security.py`)
+3. **IPC** — Unix sockets hardened to `0600` (Linux/macOS); ownership verified before connecting (`socket_security.py`); and an **accept-time peer verification** on every input/GUI connection (`platform.ipc_verify_peer()`, called from `runtime/io.py` before a single line is read) — `SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS, per-startup token file on Windows, where the transport is loopback TCP and has no filesystem permissions to rely on
 4. **PolicyKit** — `jarvis-jarvis.rules` grants `jarvis` user privilege escalation for specific `dmcp` operations (see `packages/polkit/`)
 5. **Kernel (OS-embodiment)** — `jarvis_policy.c` in `linux-jarvisos` mirrors the 4-tier policy with rate limiting via `/dev/jarvis` and `/sys/class/misc/jarvis/policy/`; not consulted from the daemon's execution path today
 
@@ -376,5 +376,7 @@ The LLM derives a **capability** (domain/service), not keywords or implementatio
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-24:* platform-abstraction table trued up to the merged tree — ABC renamed to its real `BasePlatform` and its method list completed (peer verification, sidecar resolution, askpass/elevation, privilege grant, `open_command`); `windows.py` row corrected from "PowerShell toast" to the `windows_toasts` WinRT toast with real Allow/Deny buttons (only advertised when the package imports) plus the port lockfile and per-startup `.token` authentication; `linux.py`/`macos.py` rows note their peer-credential checks and askpass strategies; IPC security layer now records the accept-time peer verification wired into `runtime/io.py`.
 
 *2026-07-22:* kernel policy engine documented as OS-side mirror, not the daemon's enforcement path (TLA in `threat_level.py`/`ConfirmationManager` is; `KernelClient.policy_check` has no callers); added `boundary.py` (output-provenance nonce verification, #165) to the dispatch table and security layers; LLM layer completed with `providers/api.py` (OpenAI-compatible, pooled failover) and non-streaming `chat.py`; provider CLI syntax corrected (no slash form in shell); sessions persist in contextor's SQLite store, not `JARVIS_DATA_DIR/sessions/`; core/runtime tables completed (`threat_level`, `sudo_manager`, `voice_state`, `events`, `session_commands`, `output_hooks`, `voice_activation_thread`); added `jarvis/contextor/` section; TUI slash-command list corrected (`/voice`/`/text` are CLI subcommands); platform ABC method names corrected; voice injects `USER_INPUT` (no `VOICE_INPUT` type); taxonomy paragraph updated to canonical seven-threat naming (Bloated #6, Forgetful #7) and GPG claim replaced with the implemented SHA-256 verification.

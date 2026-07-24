@@ -78,24 +78,38 @@ The security architecture and the OpenClaw CVE comparison (`CVE-2026-25253`,
 
 - **Linux / macOS:** Unix domain sockets, `chmod 0600`, parent dir `0700`,
   plus a path-owner stat check (`ipc_verify_owner`). Already implemented
-  (`jarvis/platform/linux.py:65-88`, `macos.py:58-81`). An accept-time
-  peer-UID check (`SO_PEERCRED`/`LOCAL_PEERCRED`) is specified in §6 but not
-  yet implemented.
+  (`jarvis/platform/linux.py:65-88`, `macos.py:58-81`). The accept-time
+  peer-UID check (`SO_PEERCRED`/`LOCAL_PEERCRED`, §5) is **also implemented**
+  (`linux.py:91-104`, `macos.py:94-107`): it runs on every input- and
+  GUI-socket accept before a single line is read (`jarvis/runtime/io.py:48,299`)
+  and is exercised over a real socket in `tests/test_platform_xplat.py`.
+  macOS falls back to the `0600` file permission if `LOCAL_PEERCRED` is
+  unavailable; Linux fails closed.
 - **Windows (when built):** **named pipes** (`\\.\pipe\jarvis-<user>-…`) with an
   explicit SDDL/DACL granting the current-user SID only — the true `0600`
   equivalent — plus `GetNamedPipeClientProcessId`/session as the `SO_PEERCRED`
-  analog.
-- **Forbidden on every OS:** falling back to loopback TCP. The lazy port is
-  `127.0.0.1:port`; it deletes the differentiator.
+  analog. Still the target; the shipped backend is the token-authenticated
+  loopback interim below.
+- **Forbidden on every OS:** falling back to loopback TCP *without* connection
+  authentication. The lazy port is a bare `127.0.0.1:port`; it deletes the
+  differentiator.
 
-> **⚠ Live regression.** The *current* Windows backend already violates this:
-> `jarvis/platform/windows.py:36-46` binds `127.0.0.1`, `ipc_secure()` is a
-> no-op (`:64-65`), and `ipc_verify_owner()` returns `True` unconditionally
-> (`:67-68`). Combined with unauthenticated `approve_confirmation` /
-> `shutdown_request` over that socket (`jarvis/runtime/io.py:103-127,351-353`),
-> **any local process of any user can approve a TLA-gated privileged tool
-> call.** This is tracked as a Phase-3 blocker, and until the named-pipe backend
-> lands the interim requirement is a per-startup auth token (§9).
+> **⚠ Live deviation (authenticated, not yet the target design).** The
+> *current* Windows backend still binds `127.0.0.1` with an ephemeral port +
+> port lockfile (`jarvis/platform/windows.py:72-89`), and `ipc_secure()` /
+> `ipc_verify_owner()` remain no-ops (`:115-119`) because the transport has no
+> filesystem permissions to enforce. The cross-user hole is closed by
+> connection auth instead: `create_ipc_server()` generates a per-startup
+> 32-byte token, writes it to `<socket path>.token`, and restricts that file
+> to the current user via `icacls`; `ipc_verify_peer()` (`:121-131`) requires
+> the token as the connection's first line and compares it with
+> `secrets.compare_digest`, failing closed when no token was generated. Both
+> socket handlers reject an unverified peer before any
+> `approve_confirmation` / `shutdown_request` / input line is honored
+> (`jarvis/runtime/io.py:48,299`), so a local process of another user can no
+> longer approve a TLA-gated privileged tool call. The named-pipe + DACL
+> backend stays the Phase-3 target — this is the documented interim (§9), not
+> the destination.
 
 ### 3.2 The confirmation gate fails **closed**, and never silently.
 
@@ -160,12 +174,12 @@ too, and a `.gitattributes` must force LF so byte-exact hashes survive Windows
 | # | Surface | OS | Severity | Evidence |
 |---|---|---|---|---|
 | B1 | ~~`dmcp` won't compile (unconditional `nix`)~~ ✅ **RESOLVED** — `nix` target-gated (`[target.'cfg(unix)'.dependencies]`), elevation cfg-gated per-OS | Win | — | `dmcp/Cargo.toml:21-22`, `src/elevation.rs` |
-| B2 | IPC unauthenticated (TCP, no owner check) | Win | **security** | `windows.py:36-68`, `io.py:103-127` |
+| B2 | ~~IPC unauthenticated (TCP, no owner check)~~ ✅ **RESOLVED (interim)** — per-startup 32-byte token in an `icacls`-restricted `.token` file, required as the connection's first line and checked accept-time; unverified peers are dropped before any message is honored. Named-pipe + DACL backend still the Phase-3 target (§3.1, §9) | Win | — | `windows.py:72-131`, `io.py:48,299` |
 | B3 | Windows desktop channel is a broken stub (balloon tip returns `None`) — since #185 confirmations stay **pending** (no silent deny; `CONFIRMATION_TIMEOUT=0`), but the channel shadows working socket/CLI prompts | Win | **UX** | `windows.py:72-110`, `confirmation_manager.py` |
 | B4 | ~~`vosk>=0.3.45` has no macOS wheel~~ ✅ **RESOLVED** — platform markers landed (`vosk>=0.3.45; sys_platform != 'darwin'` / `>=0.3.44; sys_platform == 'darwin'`) | macOS | — | `pyproject.toml` voice extras |
 | B5 | Threat classifier blind to Windows payloads | Win | **security** | `threat_level.py:38-50,82-95` |
-| B6 | shellmcp stdio loop can't start (`connect_read_pipe`) | Win | **blocks shellmcp** | `shellmcp/src/server.py:341-346` |
-| B7 | shellmcp `_display_env()` calls `os.getuid()` unconditionally → crash on every `run_command` | Win | **crash** | `shellmcp/src/server.py:70` |
+| B6 | shellmcp stdio loop can't start (`connect_read_pipe`) — still open | Win | **blocks shellmcp** | `shellmcp/src/server.py:452-455` |
+| B7 | shellmcp `_display_env()` still calls `os.getuid()` unconditionally, but is now **latent** — every call site is `sys.platform`-guarded, so it is unreachable on win32 (`run_command`, `open_app`); re-scoped from crash to a cleanup item behind B6 | Win | latent | `shellmcp/src/server.py:165-169` (guards at `:192,287`) |
 | B8 | `jarvis sudo` → `os.geteuid()` AttributeError instead of clean message | Win | crash | `sudo_manager.py:95,106` |
 | B9 | ~~dmcp system-scope paths unwritable on macOS~~ ✅ **RESOLVED** — per-OS defaults via `cfg(target_os)` (macOS `/Library/Application Support/mcp/...`) | macOS | — | `dmcp/src/paths.rs:116-152` |
 | B10 | ~~dispatch task-abort orphans grandchildren~~ ✅ **RESOLVED** — Job Object guard landed (cfg-gated `GroupKiller`: Unix killpg / Windows Job Object via windows-sys) | Win | — | `dispatch/src/mcp_client.rs:9-68` |
@@ -362,5 +376,16 @@ verified live). Every surface in §4 traces to that audit.
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-24:* §3.1 trued up to the merged tree — the accept-time peer-UID check
+(`SO_PEERCRED`/`LOCAL_PEERCRED`) is now **implemented** (`linux.py:91-104`,
+`macos.py:94-107`), wired into both socket handlers (`io.py:48,299`) and tested
+(`tests/test_platform_xplat.py`); B2 marked RESOLVED (interim) — Windows IPC is
+still loopback TCP but now carries per-startup token-file authentication checked
+accept-time, so the cross-user approve hole is closed and the named-pipe + DACL
+backend remains the Phase-3 target; B7 re-scoped from **crash** to **latent**
+(`_display_env()`'s `os.getuid()` is unreachable on win32 — every call site is
+`sys.platform`-guarded) and its citation refreshed; B6 stays open, citation
+refreshed.
 
 *2026-07-22:* resolved blockers annotated — B1 (dmcp nix target-gating), B4 (vosk platform markers), B9 (per-OS system-scope paths), B10 (Job Object kill guard), and the transport.py env-merge fix (#170); B3 re-scoped post-#185 (no silent deny — confirmations stay pending; the Windows desktop channel still shadows working prompts); §3.1 corrected (path-owner stat check implemented, accept-time peer check still specified-only); stale io.py line citation refreshed.

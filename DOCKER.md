@@ -189,6 +189,17 @@ docker run -it --rm \
 |----------|---------|-------------|
 | `OUTPUT_MODE` | `voice` | `voice` or `text` |
 | `WAKE_WORDS` | `jarvis,hey jarvis,okay jarvis` | Wake words (comma-separated) |
+| `JARVIS_MODELS_DIR` | `<data dir>/models` (in-container: `/home/jarvisuser/.local/share/jarvis/models`) | Base directory for Vosk/Piper model files. `MODELS_DIR` is accepted as a legacy alias and takes precedence if both are set. Mount a volume here if you want models to survive `--rm`. |
+| `JARVIS_OPENAI_SERVER_ENABLED` | `false` | Opt-in OpenAI-compatible HTTP endpoint (`jarvis/server/openai_compat.py`). Nothing listens unless this is `true`. |
+| `JARVIS_OPENAI_SERVER_HOST` | `127.0.0.1` | Bind address for that endpoint. |
+| `JARVIS_OPENAI_SERVER_PORT` | `8317` | Bind port for that endpoint. Publish it (`-p 8317:8317`) only together with the two settings below. |
+| `JARVIS_OPENAI_SERVER_ALLOW_NONLOCAL` | `false` | Second, separate opt-in required to bind anything other than loopback. Setting `_HOST=0.0.0.0` alone is refused — which is what you need inside a container if you intend to publish the port. |
+| `JARVIS_OPENAI_SERVER_TOKEN_FILE` | `<config dir>/openai_server_token` (in-container: `/home/jarvisuser/.config/jarvis/openai_server_token`) | Bearer token file, generated `0600` on first use. Every request needs the token; there is no anonymous mode. Mount the config volume to keep it stable across runs. |
+
+> ⚠️ The OpenAI-compatible endpoint is the one deliberate TCP listener in
+> JARVIS — every other IPC surface is a filesystem object. Exposing it from a
+> container puts it on the Docker network; read the security notes in
+> `jarvis/server/openai_compat.py` and `docs/SECURITY-ARCHITECTURE.md` first.
 
 Model and endpoint selection are **not** env vars: they come from the provider
 pool (`jarvis providers add --type ollama --model <m> [--url <u>]`, stored in
@@ -252,5 +263,7 @@ The Docker image runs JARVIS in **conversation-only mode** when the `dispatch` a
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-24:* env table extended with the variables the merged tree actually reads — `JARVIS_MODELS_DIR` (plus the legacy `MODELS_DIR` alias; base dir is the platform data dir, not a cwd-relative `models/`) and the five `JARVIS_OPENAI_SERVER_*` settings for the opt-in OpenAI-compatible listener, with its non-loopback double opt-in and mandatory bearer token called out. Names/defaults verified against `jarvis/config.py`.
 
 *2026-07-22:* first-run provider configuration added (fresh containers have no provider; `providers.json` is the only model/endpoint source); `LLM_MODEL`/`OLLAMA_HOST` env guidance removed — neither is read by the daemon; examples updated to persist `~/.config/jarvis` in a volume.

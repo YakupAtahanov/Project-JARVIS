@@ -98,12 +98,17 @@ jarvis
 
 2. **Create required folders**:
    ```bash
-   mkdir -p models/piper
+   mkdir -p ~/.local/share/jarvis/models/piper
    ```
+   Models live under the platform data dir, **not** a `models/` folder in the
+   checkout: `~/.local/share/jarvis/models` on Linux,
+   `~/Library/Application Support/jarvis/models` on macOS,
+   `%LOCALAPPDATA%\jarvis\models` on Windows. Override with `MODELS_DIR` or
+   `JARVIS_MODELS_DIR`.
 
 3. **Download a Piper TTS model** (for voice output):
    - Get both `.onnx` and `.onnx.json` files from [Piper samples](https://rhasspy.github.io/piper-samples/).  
-   - Place them in `models/piper`.  
+   - Place them in `<models dir>/piper` (e.g. `~/.local/share/jarvis/models/piper`).  
    - Example: [en_US-libritts_r-medium](https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium).  
 
 4. **Create and activate a virtual environment**:
@@ -326,8 +331,10 @@ WAKE_WORDS=jarvis,hey jarvis,okay jarvis
 # Voice activation sensitivity (0.0 to 1.0)
 VOICE_ACTIVATION_SENSITIVITY=0.8
 
-# Vosk model path
-VOSK_MODEL_PATH=models/vosk/vosk-model-small-en-us-0.15
+# Vosk model path — absolute override. The default is
+# <models dir>/vosk/vosk-model-small-en-us-0.15, where <models dir> is the
+# platform data dir (Linux: ~/.local/share/jarvis/models), not cwd-relative.
+# VOSK_MODEL_PATH=/home/you/.local/share/jarvis/models/vosk/vosk-model-small-en-us-0.15
 
 # Logging configuration (optional)
 LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -417,8 +424,8 @@ Seven threats identified through live operation, and their current status:
 | Malicious MCP servers | implemented — registry vetting + `dmcp` manifest-hash verify + agent source-confinement |
 | Prompt injection | partial — dispatch tags untrusted MCP output with a 128-bit CSPRNG boundary nonce; daemon does not yet verify the tag |
 | Misleading MCP server usage | partial — official-tier review of tool descriptions + structured schema |
-| Unauthorized sudo via MCP | implemented, with a known gap — bundled `shellmcp` doesn't declare `confirmation_required` on `run_command`, so it's gated only by the sudo prompt, not TLA (#159) |
-| Sudo capability exploitation | implemented, same gap — TLA is goal-scoped |
+| Unauthorized sudo via MCP | implemented — the host floor in `jarvis/core/threat_level.py` rates command-execution tools (`run_command`, `exec`, `shell`, …) at least DANGEROUS regardless of what a manifest declares, so the bundled `shellmcp` gap is closed (#159/#162) |
+| Sudo capability exploitation | implemented — same author-proof host floor, plus a dangerous-payload scan of tool params (`sudo`, `rm -rf`, `dd if=`, pipe-to-shell, …); TLA confirmation is goal-scoped |
 | Bloated context | partial — dispatch rolling window + contextor pruning |
 | Forgetful context (novel) | not yet mitigated — no persistent constraint register in the daemon |
 
@@ -465,5 +472,7 @@ When opening PRs or issues, use the repository templates for faster triage and r
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-24:* threat-table rows 4/5 settled to **implemented** to match the canonical `docs/SECURITY-ARCHITECTURE.md` — the `shellmcp` `run_command` gap (#159/#162) is closed by the author-proof host floor in `jarvis/core/threat_level.py`, which a manifest cannot lower; models base dir corrected from cwd-relative `models/` to the platform data dir (`~/.local/share/jarvis/models` on Linux) in both the install steps and the Vosk config sample, matching `Config.MODELS_DIR`.
 
 *2026-07-22:* PyPI name corrected everywhere (`jarvis-ai` → `project-jarvis`, matching `pyproject.toml`); local-only wording softened to local-first with optional OpenAI-compatible providers in the failover pool; `jarvis /providers add` → `jarvis providers add ...` (the slash form is TUI-only); submodule note corrected (dispatch/dmcp/contextor, no "SuperMCP") and repo URLs moved to the JarvisOSLinux org; `history-reset` default corrected (context is maintained by default); CLI table extended with implemented commands (`tui`, `providers`, `confirmations`, `sudo`, `auto-pull`); dependency-group list extended (`tui`, `voice-aec`); dead doc links replaced with existing docs; example MCP servers now list real bundled/registry servers (former list was test fixtures); taxonomy formalized to seven threats with Forgetful Context split from Bloated Context (2026-07); Vosk path corrected to `models/vosk/...`.

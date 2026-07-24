@@ -19,7 +19,8 @@ Project-JARVIS (Python)     — daemon, LLM orchestration, interfaces
   jarvis/sessions/          — session persistence
   jarvis/runtime/           — event loop, action handlers
   jarvis/contextor/         — adapter + embeddings for the Rust contextor memory binary
-  jarvis/platform/          — OS abstraction (Linux/macOS/Windows: data dirs, IPC hardening)
+  jarvis/platform/          — OS abstraction (Linux/macOS/Windows: data dirs, IPC hardening + accept-time peer auth, askpass/elevation, sidecar resolution)
+  jarvis/server/            — opt-in OpenAI-compatible HTTP endpoint (`openai_compat.py`, off by default)
   shellmcp/                 — bundled shell MCP server (run_command, open_app, web_search)
 
 deps/rust/dispatch          — Rust signal-driven MCP task orchestrator
@@ -125,8 +126,19 @@ mismatched wrappers as untrusted (Threat #2 mitigation, #165).
 
 `jarvis sudo enable/disable` (`jarvis/core/sudo_manager.py`, #158) manages a
 password-required, visudo-validated `/etc/sudoers.d/jarvis` drop-in (atomic
-install). The bundled `shellmcp` server escalates privileged commands via
-`sudo -A` + ksshaskpass so the GUI password prompt remains the boundary.
+install) — Linux only; macOS/Windows report "not granted" rather than managing
+sudoers.
+
+The bundled `shellmcp` server escalates privileged commands via `sudo -A`, and
+the askpass helper is resolved **per OS** through the platform layer
+(`BasePlatform.find_askpass()` / `askpass_helpers()`), so the GUI password
+prompt stays the boundary on every platform:
+
+| OS | Askpass resolution |
+|----|--------------------|
+| Linux | probes five candidates in priority order — `/usr/bin/ksshaskpass`, `/usr/lib/ssh/ksshaskpass`, `ssh-askpass`, `lxqt-openssh-askpass`, `x11-ssh-askpass`; `elevate()` raises with the full candidate list if none is installed |
+| macOS | no CLI askpass ships with the OS, so `find_askpass()` installs an `osascript`-backed shim at `/usr/local/libexec/jarvis-osascript-askpass` that presents the same interface (native "with administrator privileges" dialog) |
+| Windows | no askpass — elevation is a UAC consent prompt, so `askpass_helpers()` is empty |
 
 ---
 
