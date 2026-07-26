@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from jarvis.config import Config
 from jarvis.core.command_parser import TaskParser
 from jarvis.dispatch.goal_manager import GoalManager
 from tests.integration_utils import make_dispatch_action, make_respond_action, make_task
@@ -120,12 +121,24 @@ class TestEndToEndWorkflows:
         assert result["output"] == "All done!"
 
     def test_history_reset_after_response(self):
-        """Test that chat history is reset after each response (when configured)."""
+        """Chat history is reset after a response when RESET_HISTORY is on."""
         jarvis = self._make_jarvis(make_respond_action("Done."))
 
-        with patch.object(jarvis.llm, "reset_history") as mock_reset:
-            jarvis.ask("Test")
-            mock_reset.assert_called_once()
+        # The reset is config-gated and defaults to off (multi-turn chat), so
+        # the test has to turn it on to exercise the path it names.
+        with patch.object(Config, "RESET_HISTORY_AFTER_RESPONSE", True):
+            with patch.object(jarvis.llm, "reset_history") as mock_reset:
+                jarvis.ask("Test")
+                mock_reset.assert_called_once()
+
+    def test_history_kept_when_reset_disabled(self):
+        """With the default config (multi-turn chat), history is not reset."""
+        jarvis = self._make_jarvis(make_respond_action("Done."))
+
+        with patch.object(Config, "RESET_HISTORY_AFTER_RESPONSE", False):
+            with patch.object(jarvis.llm, "reset_history") as mock_reset:
+                jarvis.ask("Test")
+                mock_reset.assert_not_called()
 
     def test_goal_added_on_ask(self):
         """Test that a goal is added for each ask() call."""

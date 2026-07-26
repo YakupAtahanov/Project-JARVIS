@@ -167,7 +167,17 @@ class APIProvider(BaseLLMProvider):
             raise
 
     def is_available(self) -> bool:
-        self._ensure_client()
+        # A missing httpx makes this provider unusable, full stop — report that
+        # rather than raising out of a probe callers use to decide fallback.
+        # Reachability errors below are deliberately optimistic instead (not
+        # every OpenAI-compatible endpoint serves /v1/models), so the two cases
+        # must not share an answer.
+        try:
+            self._ensure_client()
+        except ImportError as e:
+            logger.debug(f"API provider unusable: {e}")
+            return False
+
         try:
             with self._httpx.Client(timeout=5.0) as client:
                 try:

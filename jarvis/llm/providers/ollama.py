@@ -237,8 +237,11 @@ class OllamaProvider(BaseLLMProvider):
         _try_start_ollama(self.base_url)
 
     def is_available(self) -> bool:
-        self._ensure_client()
+        # _ensure_client raises ImportError when the ollama package is absent.
+        # This is a capability probe — callers ask precisely so they can fall
+        # back — so a missing package is "not available", not an exception.
         try:
+            self._ensure_client()
             self._client.list()
             return True
         except Exception as e:

@@ -98,7 +98,7 @@ class TestLLMJsonResponseParsing:
 
         llm = LLM(
             provider=mock_provider,
-            system_prompt="test",
+            prompts={"root": "test"},
             wrong_json_message="Fix your JSON",
         )
 
@@ -117,7 +117,7 @@ class TestLLMJsonResponseParsing:
             '{"user_request": "InvalidType", "output": "test"}',
         ]
 
-        llm = LLM(provider=mock_provider, system_prompt="test")
+        llm = LLM(provider=mock_provider, prompts={"root": "test"})
         result = llm.ask("test")
 
         assert isinstance(result, dict)
@@ -164,7 +164,7 @@ class TestLLMResponseTypes:
             [mock_llm_response("Conversation", "Hello! I'm JARVIS.")]
         )
 
-        llm = LLM(provider=provider, system_prompt="test")
+        llm = LLM(provider=provider, prompts={"root": "test"})
         result = llm.ask("Hello")
 
         assert_valid_json_response(result)
@@ -177,7 +177,7 @@ class TestLLMResponseTypes:
         commands = "list_servers(); inspect_server(EchoMCP)"
         provider = create_mock_llm_provider([mock_llm_response("SuperMCP", commands)])
 
-        llm = LLM(provider=provider, system_prompt="test")
+        llm = LLM(provider=provider, prompts={"root": "test"})
         result = llm.ask("What servers are available?")
 
         assert_valid_json_response(result)
@@ -195,7 +195,9 @@ class TestLLMResponseTypes:
         ]
 
         llm = LLM(
-            provider=mock_provider, system_prompt="test", wrong_json_message="Fix JSON"
+            provider=mock_provider,
+            prompts={"root": "test"},
+            wrong_json_message="Fix JSON",
         )
         result = llm.ask("test question")
         assert_valid_json_response(result)
@@ -212,7 +214,7 @@ class TestLLMContextManagement:
             [mock_llm_response("Conversation", "Hello!")]
         )
 
-        llm = LLM(provider=provider, system_prompt="You are JARVIS")
+        llm = LLM(provider=provider, prompts={"root": "You are JARVIS"})
         assert len(llm.chat_history) > 0
         assert llm.chat_history[0]["role"] == "system"
         assert "JARVIS" in llm.chat_history[0]["content"]
@@ -227,7 +229,7 @@ class TestLLMContextManagement:
             ]
         )
 
-        llm = LLM(provider=provider, system_prompt="test")
+        llm = LLM(provider=provider, prompts={"root": "test"})
         llm.ask("First question")
         initial = len(llm.chat_history)
         llm.ask("Second question")
@@ -242,7 +244,7 @@ class TestLLMContextManagement:
             ]
         )
 
-        llm = LLM(provider=provider, system_prompt="test")
+        llm = LLM(provider=provider, prompts={"root": "test"})
         llm.ask("Question")
         assert len(llm.chat_history) > 1
 
@@ -297,15 +299,26 @@ class TestLLMErrorHandling:
             create_provider(provider="ollama", model="")
 
     def test_llm_timeout_handling(self):
+        """A provider timeout degrades to the fallback response, not a raise.
+
+        ask() must keep returning a well-formed action: the daemon drives the
+        provider pool's failover from the returned value, and a raise here
+        would take the whole ROOT turn down instead of moving to the next
+        provider. The failing turn is also rolled off the history.
+        """
         from jarvis.llm import LLM
 
         mock_provider = Mock()
         mock_provider.model = "test"
         mock_provider.chat.side_effect = TimeoutError("Request timed out")
 
-        llm = LLM(provider=mock_provider, system_prompt="test")
-        with pytest.raises(TimeoutError):
-            llm.ask("test question")
+        llm = LLM(provider=mock_provider, prompts={"root": "test"})
+        history_before = len(llm.chat_history)
+
+        result = llm.ask("test question")
+
+        assert isinstance(result, dict) and result.get("action")
+        assert len(llm.chat_history) == history_before
 
     def test_empty_llm_response(self):
         from jarvis.llm import LLM
@@ -318,7 +331,7 @@ class TestLLMErrorHandling:
         )
 
         llm = LLM(
-            provider=provider, system_prompt="test", wrong_json_message="Fix JSON"
+            provider=provider, prompts={"root": "test"}, wrong_json_message="Fix JSON"
         )
         result = llm.ask("test")
         assert_valid_json_response(result)
