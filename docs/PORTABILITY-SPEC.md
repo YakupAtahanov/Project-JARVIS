@@ -178,8 +178,8 @@ too, and a `.gitattributes` must force LF so byte-exact hashes survive Windows
 | B3 | Windows desktop channel is a broken stub (balloon tip returns `None`) — since #185 confirmations stay **pending** (no silent deny; `CONFIRMATION_TIMEOUT=0`), but the channel shadows working socket/CLI prompts | Win | **UX** | `windows.py:72-110`, `confirmation_manager.py` |
 | B4 | ~~`vosk>=0.3.45` has no macOS wheel~~ ✅ **RESOLVED** — platform markers landed (`vosk>=0.3.45; sys_platform != 'darwin'` / `>=0.3.44; sys_platform == 'darwin'`) | macOS | — | `pyproject.toml` voice extras |
 | B5 | Threat classifier blind to Windows payloads | Win | **security** | `threat_level.py:38-50,82-95` |
-| B6 | shellmcp stdio loop can't start (`connect_read_pipe`) — still open | Win | **blocks shellmcp** | `shellmcp/src/server.py:452-455` |
-| B7 | shellmcp `_display_env()` still calls `os.getuid()` unconditionally, but is now **latent** — every call site is `sys.platform`-guarded, so it is unreachable on win32 (`run_command`, `open_app`); re-scoped from crash to a cleanup item behind B6 | Win | latent | `shellmcp/src/server.py:165-169` (guards at `:192,287`) |
+| B6 | ~~shellmcp stdio loop can't start (`connect_read_pipe`)~~ ✅ **RESOLVED (by removal)** — the bundled `shellmcp` was retired; shell servers now come from the registry, and `jarvis-shell` uses a synchronous stdin loop with no `connect_read_pipe` | Win | — | mcp-registry `servers/jarvis-shell/server.py` |
+| B7 | ~~shellmcp `_display_env()` calls `os.getuid()` unconditionally~~ ✅ **RESOLVED (by removal)** — retired with B6. The registry `jarvis-shell` port keeps the same `sys.platform` guard, so the call is unreachable on win32 | Win | — | mcp-registry `servers/jarvis-shell/server.py` |
 | B8 | `jarvis sudo` → `os.geteuid()` AttributeError instead of clean message | Win | crash | `sudo_manager.py:95,106` |
 | B9 | ~~dmcp system-scope paths unwritable on macOS~~ ✅ **RESOLVED** — per-OS defaults via `cfg(target_os)` (macOS `/Library/Application Support/mcp/...`) | macOS | — | `dmcp/src/paths.rs:116-152` |
 | B10 | ~~dispatch task-abort orphans grandchildren~~ ✅ **RESOLVED** — Job Object guard landed (cfg-gated `GroupKiller`: Unix killpg / Windows Job Object via windows-sys) | Win | — | `dispatch/src/mcp_client.rs:9-68` |
@@ -261,10 +261,10 @@ Manifest v2 (back-compatible: v1 clients ignore unknown keys):
   in `threat_level.py` — closes B5; gate `jarvis sudo`/`sudo_manager` (B8);
   `transport.py` env-merge + `resolve_sidecar` (cross-cutting); macOS notification
   string-escaping; `pyproject` markers for vosk/aec (B4).
-- **shellmcp (in Project-JARVIS):** thread-based stdio reader (B6);
-  `cfg`-guard the Wayland/`getuid` block (B7); per-OS elevation strategy
-  (osascript askpass on macOS; UAC on Windows); per-OS `PRIVILEGED_PREFIXES`;
-  `open_app` via `open`/`os.startfile`.
+- **shell servers (mcp-registry, no longer bundled here):** per-OS elevation
+  strategy (osascript askpass on macOS; UAC on Windows); per-OS
+  `PRIVILEGED_PREFIXES`. `open_app` already branches per OS, and B6/B7 are
+  resolved by the retirement of the bundled copy.
 - **dmcp:** target-gate `nix` + `cfg`-gate elevation (B1, unblocks compile);
   per-OS system-scope paths (B9); `.env.example` shadowing gate; `.cmd`/PATHEXT
   command resolution (npx/uvx); read-only `.git` handling; per-OS setup runner.
@@ -287,8 +287,8 @@ today. The concrete list:
 2. **dmcp on macOS** (compiles today via `nix`): system-scope paths →
    `/Library/Application Support/mcp` (not SIP-sealed `/usr/share`, B9); elevation
    → `sudo` re-exec when a TTY, else `osascript … with administrator privileges`.
-3. **shellmcp askpass**: ship an `osascript`-based askpass shim so `sudo -A`
-   works without `ksshaskpass`.
+3. **Askpass on macOS**: `BasePlatform.find_askpass()` installs an
+   `osascript`-backed shim so `sudo -A` works without `ksshaskpass`.
 4. **Notifications**: `macos.py` `osascript display dialog` is already correct in
    shape — add title/body escaping (`:94-98` interpolates unescaped).
 5. **`launchctl` label**: fix the `com.<name>.<name>` guess to try
@@ -325,8 +325,6 @@ interim mitigations** because the current Windows fallback ships insecure:
 - `has_desktop_notifications() → False` on Windows (stops the silent auto-deny,
   B3).
 - Token-auth the Windows IPC or disable it (B2).
-- `cfg`-guard shellmcp's `getuid`/Wayland block (B7) and thread the stdio loop
-  (B6) so the server can start.
 
 **The hard, deferred build:** WinRT actionable toast; named-pipe IPC backend;
 Windows payload signatures (B5); Job Object (B10); `.cmd`/PATHEXT resolution;

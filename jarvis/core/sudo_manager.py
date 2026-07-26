@@ -5,9 +5,10 @@ grants the invoking user sudo; ``is_sudo_enabled`` reports whether that drop-in
 is present so ``jarvis sudo`` can reconcile the real system state against the
 ``JARVIS_SUDO_ENABLED`` config preference.
 
-The drop-in is **password-required** on purpose. ``shellmcp`` escalates via
-``sudo -A`` + ksshaskpass, and the GUI password prompt is the security boundary
-the architecture depends on — a ``NOPASSWD`` rule would remove it. This toggle
+The drop-in is **password-required** on purpose. A user-scope shell server that
+escalates via ``sudo -A`` gets a GUI password prompt (askpass, resolved per OS
+by the platform layer), and that prompt is the security boundary the
+architecture depends on — a ``NOPASSWD`` rule would remove it. This toggle
 makes the grant explicit and jarvis-managed; it never weakens the prompt.
 
 Writing to ``/etc/sudoers.d`` is guarded: root is required, the candidate file

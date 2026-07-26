@@ -279,8 +279,6 @@ def create_mock_llm_provider(responses: Optional[List] = None) -> Mock:
 
 
 # Keep old names available for backward compat in conftest fixtures
-mock_shellmcp_approval_required = None  # removed
-mock_shellmcp_approved_execution = None  # removed
 MockApprovalHandler = None  # removed
 create_mock_supermcp_client = None  # removed
 mock_supermcp_tool_call = None  # removed

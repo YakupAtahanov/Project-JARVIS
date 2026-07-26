@@ -176,7 +176,7 @@ Slack tokens, and months of complete chat histories.
 **OpenClaw:** Users commonly ran as root or with administrator privileges.
 
 **JARVIS:** `JARVIS_SUDO_ENABLED=false` by default.  Sudo access is an
-explicit opt-in requiring a config change.  The `shellmcp` server inherits
+explicit opt-in requiring a config change.  A user-scope shell server inherits
 only the current user’s permissions.
 
 - Status: ✅ Mitigated by default
@@ -189,7 +189,7 @@ only the current user’s permissions.
 
 **Risk:** JARVIS reads content from web pages, files, or tool outputs when
 instructed.  A malicious document could embed instruction text that the
-LLM interprets as a user command and routes to `shellmcp`.
+LLM interprets as a user command and routes to a shell server.
 
 **Current mitigations:**
 - `CONFIRMATION_MODE=smart` (default) — the host assigns a minimum threat
@@ -197,7 +197,7 @@ LLM interprets as a user command and routes to `shellmcp`.
   command-execution tools, manifest-declared level, dangerous-payload scan of
   params), and anything >= ELEVATED is blocked pending user confirmation.
   A tool author cannot opt out of gating a dangerous tool — the former
-  `shellmcp` gap (#159/#162) is closed by the host floor in
+  bundled-shell-server gap (#159/#162) is closed by the host floor in
   `jarvis/core/threat_level.py`.
 - `jarvis/core/threat_level.py` — scans dispatched tool *parameters* for
   dangerous payloads (sudo, `rm -rf`, pipe-to-shell, …) and raises the

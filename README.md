@@ -424,7 +424,7 @@ Seven threats identified through live operation, and their current status:
 | Malicious MCP servers | implemented — registry vetting + `dmcp` manifest-hash verify + agent source-confinement |
 | Prompt injection | partial — dispatch tags untrusted MCP output with a 128-bit CSPRNG boundary nonce; daemon does not yet verify the tag |
 | Misleading MCP server usage | partial — official-tier review of tool descriptions + structured schema |
-| Unauthorized sudo via MCP | implemented — the host floor in `jarvis/core/threat_level.py` rates command-execution tools (`run_command`, `exec`, `shell`, …) at least DANGEROUS regardless of what a manifest declares, so the bundled `shellmcp` gap is closed (#159/#162) |
+| Unauthorized sudo via MCP | implemented — the host floor in `jarvis/core/threat_level.py` rates command-execution tools (`run_command`, `exec`, `shell`, …) at least DANGEROUS regardless of what a manifest declares, so a shell server cannot under-declare its own threat level (#159/#162) |
 | Sudo capability exploitation | implemented — same author-proof host floor, plus a dangerous-payload scan of tool params (`sudo`, `rm -rf`, `dd if=`, pipe-to-shell, …); TLA confirmation is goal-scoped |
 | Bloated context | partial — dispatch rolling window + contextor pruning |
 | Forgetful context (novel) | not yet mitigated — no persistent constraint register in the daemon |

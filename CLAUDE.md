@@ -21,7 +21,6 @@ Project-JARVIS (Python)     — daemon, LLM orchestration, interfaces
   jarvis/contextor/         — adapter + embeddings for the Rust contextor memory binary
   jarvis/platform/          — OS abstraction (Linux/macOS/Windows: data dirs, IPC hardening + accept-time peer auth, askpass/elevation, sidecar resolution)
   jarvis/server/            — opt-in OpenAI-compatible HTTP endpoint (`openai_compat.py`, off by default)
-  shellmcp/                 — bundled shell MCP server (run_command, open_app, web_search)
 
 deps/rust/dispatch          — Rust signal-driven MCP task orchestrator
 deps/rust/dmcp              — Rust MCP server manager (package manager for MCP)
@@ -129,8 +128,9 @@ password-required, visudo-validated `/etc/sudoers.d/jarvis` drop-in (atomic
 install) — Linux only; macOS/Windows report "not granted" rather than managing
 sudoers.
 
-The bundled `shellmcp` server escalates privileged commands via `sudo -A`, and
-the askpass helper is resolved **per OS** through the platform layer
+Shell servers are installed from the MCP registry, not bundled here. A
+user-scope shell server that escalates a privileged command via `sudo -A` has
+its askpass helper resolved **per OS** through the platform layer
 (`BasePlatform.find_askpass()` / `askpass_helpers()`), so the GUI password
 prompt stays the boundary on every platform:
 
