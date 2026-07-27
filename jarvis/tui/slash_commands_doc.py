@@ -7,13 +7,19 @@ this module is the doc source for the help table only).
 
 The **keyboard** section is built from ``JarvisTUI.BINDINGS`` plus a few lines that
 are not real Textual bindings (Enter, mouse, help-modal Esc).
+
+These tables are also the single source of truth for the input line's Tab
+completion and suggestion dropdown, via ``slash_command_catalog()`` — a command
+that is not documented here does not get completed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
-from textual.binding import Binding
+if TYPE_CHECKING:  # keeps the command catalog importable without Textual
+    from textual.binding import Binding
 
 # (command column, meaning) — sync with jarvis/runtime/session_commands.py
 SESSION_SLASH_HELP: tuple[tuple[str, str], ...] = (
@@ -25,6 +31,7 @@ SESSION_SLASH_HELP: tuple[tuple[str, str], ...] = (
     ("/switch <id>", "Switch session by short id prefix."),
     ("/rename <title>", "Rename the **current** session."),
     ("/delete <id>", "Delete session by **unique** id prefix."),
+    ("/context", "Show token usage of the last LLM call and active server docs."),
 )
 
 TUI_LOCAL_SLASH_HELP: tuple[tuple[str, str], ...] = (
@@ -56,9 +63,35 @@ TUI_LOCAL_SLASH_HELP: tuple[tuple[str, str], ...] = (
 # Keys that are not represented as App BINDINGS but belong in the cheat sheet.
 EXTRA_KEYBOARD_HELP: tuple[tuple[str, str], ...] = (
     ("Enter", "Send the message in the input line."),
+    ("Tab", "Complete the `/command` being typed; press again to cycle matches."),
+    ("Up / Down", "Walk previously sent messages (or the suggestion list)."),
+    ("Ctrl+W", "Delete the word left of the cursor (Ctrl+Backspace where supported)."),
+    ("Ctrl+Delete", "Delete the word right of the cursor."),
     ("Click / arrows", "Select a session in the sidebar."),
-    ("Esc", "Close the help modal when it is focused."),
+    ("Esc", "Close the suggestion list, or the help modal when it is focused."),
 )
+
+
+def _plain(text: str) -> str:
+    """Drop the Markdown emphasis the tables carry, for plain-text surfaces."""
+    return text.replace("**", "").replace("`", "")
+
+
+def slash_command_catalog() -> tuple[tuple[str, str], ...]:
+    """Bare ``/command`` names plus a one-line description, in doc order.
+
+    Derived from the help tables above rather than restated, so completion and
+    the suggestion dropdown cannot drift from what ``/help`` documents. Rows
+    that only differ in their arguments (``/providers``, ``/providers add``, …)
+    collapse onto the first, since only the command token is completable.
+    """
+    catalog: dict[str, str] = {}
+    for column, description in TUI_LOCAL_SLASH_HELP + SESSION_SLASH_HELP:
+        for alternative in column.split(","):
+            name = alternative.strip().split(" ", 1)[0]
+            if name.startswith("/") and name not in catalog:
+                catalog[name] = _plain(description)
+    return tuple(catalog.items())
 
 
 def _markdown_table(rows: Sequence[tuple[str, str]]) -> str:

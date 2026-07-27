@@ -21,6 +21,23 @@ Design notes:
     via the existing handlers in ``main.py``).
 """
 
-from .app import JarvisTUI, run_tui
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .app import JarvisTUI, run_tui
 
 __all__ = ["JarvisTUI", "run_tui"]
+
+
+def __getattr__(name: str) -> Any:
+    """Pull in the Textual app only when it is actually asked for.
+
+    ``input_helpers`` and ``slash_commands_doc`` are plain Python; importing
+    them must not require the optional ``[tui]`` extra.  ``jarvis tui`` still
+    gets the same ImportError (and the same install hint) from ``cli.py``.
+    """
+    if name in __all__:
+        from . import app
+
+        return getattr(app, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

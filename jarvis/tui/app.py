@@ -24,7 +24,11 @@ Keybindings:
     Ctrl+Shift+C — clear on-screen transcript (export buffer only; not memory)
     Ctrl+Shift+E — export transcript to ``JARVIS_DATA_DIR/transcripts/``
     F1      — help (keys from ``BINDINGS`` + documented slash commands)
-    Enter   — submit message
+    Enter   — submit message, or accept the highlighted slash-command suggestion
+    Tab     — complete the ``/command`` being typed; press again to cycle
+    Up/Down — walk previously sent messages (the suggestion list when it is open)
+    Esc     — dismiss the slash-command suggestions
+    Ctrl+W  — delete the word left of the cursor (see ``command_input``)
     Click / arrows — switch session (in sidebar)
 
 Architecture:
@@ -58,6 +62,7 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    OptionList,
     RichLog,
     Static,
 )
@@ -68,6 +73,7 @@ from . import actions as tui_actions
 from . import lifecycle as tui_lifecycle
 from . import output as tui_output
 from . import status_bar as tui_status_bar
+from .command_input import CommandDropdown, CommandInput
 from .config_modal import ConfigModal, ConfigModalResult
 from .confirm_modal import ConfirmModal
 from .local_input import export_transcript_to_disk, handle_local_input
@@ -119,6 +125,7 @@ class JarvisTUI(App):
 
     #chat-pane {
         padding: 0 1;
+        layers: base dropdown;
     }
 
     #chat-log {
@@ -190,7 +197,8 @@ class JarvisTUI(App):
                 yield ListView(id="session-list")
             with Vertical(id="chat-pane"):
                 yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
-                yield Input(
+                yield CommandDropdown(id="command-dropdown")
+                yield CommandInput(
                     placeholder="Message, /help, /export, /sessions, /new…",
                     id="input",
                 )
@@ -240,6 +248,14 @@ class JarvisTUI(App):
         # commands still work — main.py's handler catches them.
         self._pending_autoname_text = text
         self.jarvis.events.inject_user_input(text)
+
+    @on(OptionList.OptionSelected, "#command-dropdown")
+    def on_command_suggested(self, event: OptionList.OptionSelected) -> None:
+        """Mouse click on a suggestion — Enter is handled inside the input."""
+        event.stop()
+        command_input = self.query_one("#input", CommandInput)
+        command_input.accept_command(event.option.id)
+        command_input.focus()
 
     def _on_jarvis_output(self, response: Dict[str, Any]) -> None:
         """Output callback — called from the main asyncio loop by OutputManager."""
