@@ -169,15 +169,26 @@ class TestProviderSelection:
             assert jarvis.config.Config.STT_PROVIDER == "vosk"
         importlib.reload(jarvis.config)
 
-    def test_faster_whisper_provider_selects_whisper_stt(self, whisper_modules):
+    def test_faster_whisper_provider_selects_whisper_stt(
+        self, whisper_modules, tmp_path
+    ):
         from jarvis.voice.stt import create_stt
         from jarvis.voice.stt.whisper_stt import WhisperSTT
 
-        stt = create_stt(provider="faster-whisper", **_factory_kwargs())
+        # create_stt calls ensure_model(), which *creates* model_dir — so it
+        # must be a writable temp path. A fixed path like /models/whisper
+        # passes only where the suite happens to run as root, and degrades to
+        # Vosk everywhere else (which is correct product behavior, and exactly
+        # what this test would then mis-report as a selection bug).
+        model_dir = tmp_path / "whisper"
+
+        stt = create_stt(
+            provider="faster-whisper", **_factory_kwargs(model_dir=str(model_dir))
+        )
 
         assert isinstance(stt, WhisperSTT)
         assert stt.model_size == "small"
-        assert stt.model_dir == "/models/whisper"
+        assert stt.model_dir == str(model_dir)
 
     def test_unknown_provider_still_raises(self, audio_modules):
         from jarvis.voice.stt import create_stt
@@ -191,17 +202,17 @@ class TestProviderSelection:
 
 @pytest.mark.unit
 class TestLazyImportUnavailability:
-    def test_is_available_is_false_and_does_not_raise(self, audio_modules):
+    def test_is_available_is_false_and_does_not_raise(self, audio_modules, tmp_path):
         from jarvis.voice.stt.whisper_stt import WhisperSTT
 
-        stt = WhisperSTT(model_size="small", model_dir="/models/whisper")
+        stt = WhisperSTT(model_size="small", model_dir=str(tmp_path / "whisper"))
 
         assert stt.is_available() is False
 
-    def test_ensure_model_is_false_without_the_package(self, audio_modules):
+    def test_ensure_model_is_false_without_the_package(self, audio_modules, tmp_path):
         from jarvis.voice.stt.whisper_stt import WhisperSTT
 
-        stt = WhisperSTT(model_size="small", model_dir="/models/whisper")
+        stt = WhisperSTT(model_size="small", model_dir=str(tmp_path / "whisper"))
 
         assert stt.ensure_model() is False
 
