@@ -20,6 +20,7 @@ User Input (TUI / CLI / voice / socket)
       ├─ search_tools      → dispatch/discovery.py (embedding search on dmcp index)
       ├─ get_server_docs   → dmcp_registry.get_server_docs()
       ├─ install_server    → dmcp_registry.install()
+      ├─ update_server     → dmcp_registry.update_server() (heal a drifted server)
       ├─ configure_server  → dmcp_registry.configure()
       ├─ dispatch ─────────→ Rust dispatch binary (parallel MCP tool calls)
       │                         signals (INIT/EXIT/REMIND) loop back to EventMerger

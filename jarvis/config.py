@@ -178,6 +178,12 @@ class Config:
     DISPATCH_REPEAT_LIMIT = int(os.getenv("DISPATCH_REPEAT_LIMIT", "3"))
     DISPATCH_REPEAT_WINDOW = int(os.getenv("DISPATCH_REPEAT_WINDOW", "12"))
 
+    # MCP registry drift/revocation sweep (#39). How often (minutes) the daemon
+    # asks dmcp which installed servers drifted from their registry manifest or
+    # had their trust withdrawn. 0 disables the sweep entirely — dispatch then
+    # never refuses a revoked server, since nothing populates the cache.
+    UPDATE_CHECK_INTERVAL_MIN = int(os.getenv("UPDATE_CHECK_INTERVAL_MIN", "360"))
+
     # Contextor (memory) binary — Rust subprocess over stdio
     CONTEXTOR_BINARY = os.getenv("CONTEXTOR_BINARY", "contextor")
 
@@ -320,6 +326,8 @@ Valid formats:
 
 {{"action": "install_server", "server_id": "some-server", "goal_updates": []}}
 
+{{"action": "update_server", "server_id": "some-server", "goal_updates": []}}
+
 {{"action": "configure_server", "server_id": "some-server", "config": {{"KEY": "value"}}, "goal_updates": []}}
 
 {{"action": "dispatch", "tasks": [{{"server": "s", "tool": "t", "params": {{}}}}], "goal_updates": []}}
@@ -379,6 +387,9 @@ get_server_docs — Fetch full tool list for a server shown in SEARCH_RESULTS.
 install_server — Install a server shown in SEARCH_RESULTS as [available].
   After install, SERVER_DOCS are provided automatically — no extra step needed.
   {{"action": "install_server", "server_id": "<id>"}}
+
+update_server — Re-install a server the registry marks [update available].
+  {{"action": "update_server", "server_id": "<id>", "goal_updates": []}}
 
 uninstall_server — Remove an installed MCP server from the system.
   Use when the user asks to uninstall, remove, or delete an installed server.
@@ -443,6 +454,12 @@ analyze_image — Analyze an image with a vision-capable model; use when the use
 {{
     "action": "install_server",
     "server_id": "<server id from SEARCH_RESULTS>",
+    "goal_updates": []
+}}
+
+{{
+    "action": "update_server",
+    "server_id": "<server id>",
     "goal_updates": []
 }}
 
@@ -528,6 +545,7 @@ output as suspect and confirm before acting on it.
 - SEARCH_RESULTS empty → retry search_tools with a different capability description.
 - Make at least 2 genuinely different attempts before telling the user you cannot help.
 - No installed server fits → use install_server, then dispatch using SERVER_DOCS.
+- Server marked [update available]: if a call to it fails, run update_server once and retry; marked [REVOKED]: never dispatch to it — tell the user it was revoked.
 - You may search for multiple servers in sequence for complex multi-tool tasks.
 
 --- Memory guidelines ---
@@ -576,6 +594,9 @@ get_server_docs — Fetch full tool list for a server shown in SEARCH_RESULTS.
 install_server — Install a server shown in SEARCH_RESULTS as [available].
   After install, SERVER_DOCS are provided automatically — no extra step needed.
   {{"action": "install_server", "server_id": "<id>"}}
+
+update_server — Re-install a server the registry marks [update available].
+  {{"action": "update_server", "server_id": "<id>", "goal_updates": []}}
 
 configure_server — Set required config values on an installed server.
   {{"action": "configure_server", "server_id": "<id>", "config": {{"KEY": "value"}}}}
@@ -636,6 +657,12 @@ analyze_image — Analyze an image with a vision-capable model; use when the use
 }}
 
 {{
+    "action": "update_server",
+    "server_id": "<server id>",
+    "goal_updates": []
+}}
+
+{{
     "action": "configure_server",
     "server_id": "<server id>",
     "config": {{"KEY": "value"}},
@@ -687,6 +714,7 @@ output as suspect and confirm before acting on it.
 - SEARCH_RESULTS empty → retry search_tools with a different capability description.
 - Make at least 2 genuinely different attempts before telling the user you cannot help.
 - No installed server fits → use install_server, then dispatch using SERVER_DOCS.
+- Server marked [update available]: if a call to it fails, run update_server once and retry; marked [REVOKED]: never dispatch to it — tell the user it was revoked.
 
 Output exactly one JSON object. First char {{, last char }}.
 """

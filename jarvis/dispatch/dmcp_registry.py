@@ -80,7 +80,33 @@ async def _local_installed_servers(logger: Logger) -> List[Dict[str, Any]]:
     return result
 
 
-async def search_servers(logger: Logger, keywords: List[str]) -> Dict[str, Any]:
+def _annotate_registry_state(
+    servers: List[Dict[str, Any]], update_cache: Dict[str, Any]
+) -> None:
+    """Mark drifted and revoked servers in-place from a sweep cache (#39).
+
+    A revoked server stays in the results, marked: hiding it leaves the LLM
+    unable to explain why the server it used yesterday is gone, and it would
+    just install it again.
+    """
+    for server in servers:
+        sid = server.get("id") or server.get("server_id")
+        row = update_cache.get(sid) if sid else None
+        if not isinstance(row, dict):
+            continue
+        key = "description" if "description" in server else "summary"
+        text = str(server.get(key) or "").strip()
+        if row.get("trust_status") == "removed":
+            server[key] = f"[REVOKED — do not use] {text}".strip()
+        elif row.get("update_available"):
+            server[key] = f"{text} [update available]".strip()
+
+
+async def search_servers(
+    logger: Logger,
+    keywords: List[str],
+    update_cache: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Search for MCP servers by keywords via `dmcp browse` + locally installed manifests."""
     logger.info(f"Dispatch: Searching MCP servers with keywords: {keywords}")
 
@@ -158,6 +184,9 @@ async def search_servers(logger: Logger, keywords: List[str]) -> Dict[str, Any]:
     available = [s for s in servers if not s.get("installed")]
     sorted_servers = installed + available
 
+    if update_cache:
+        _annotate_registry_state(sorted_servers, update_cache)
+
     logger.info(
         f"Dispatch: Found {len(installed)} installed, "
         f"{len(available)} available server(s) for keywords {keywords}"
@@ -173,6 +202,42 @@ async def install_server(logger: Logger, server_id: str) -> Dict[str, Any]:
     if raw is None:
         return {"error": f"Failed to install server '{server_id}'"}
     return {"installed": server_id, "output": raw.strip()}
+
+
+async def update_server(logger: Logger, server_id: str) -> Dict[str, Any]:
+    """Re-install a server whose registry manifest drifted (`dmcp update <id>`)."""
+    logger.info(f"Dispatch: Updating MCP server '{server_id}'")
+    raw = await run_dmcp(logger, "update", server_id)
+    if raw is None:
+        return {"error": f"Failed to update server '{server_id}'"}
+    return {"updated": server_id, "output": raw.strip()}
+
+
+async def check_updates(
+    logger: Logger, server_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Return dmcp's drift report (`dmcp update --check --json`).
+
+    Rows are {id, installed_hash, registry_hash, trust_status, update_available}.
+    Every failure — no binary, timeout, non-JSON — answers with an empty list:
+    this is advisory information, and no caller may be broken by its absence.
+    """
+    args = (
+        ("update", "--check", "--json", server_id)
+        if server_id
+        else ("update", "--check", "--all", "--json")
+    )
+    raw = await run_dmcp(logger, *args)
+    if raw is None:
+        return []
+    try:
+        rows = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        logger.debug("Dispatch: dmcp update --check returned invalid JSON")
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
 
 
 async def uninstall_server(logger: Logger, server_id: str) -> Dict[str, Any]:

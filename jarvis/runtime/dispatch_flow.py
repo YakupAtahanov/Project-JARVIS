@@ -513,6 +513,27 @@ async def _stamp_stateful_tasks(
             )
 
 
+def _revoked_servers(app: Any, tasks: list[dict[str, Any]]) -> list[str]:
+    """Servers in this batch the registry sweep marked revoked (#39).
+
+    An absent or empty cache means nothing is known yet, not that everything is
+    fine — it simply imposes no constraint, exactly as before the sweep existed.
+    """
+    cache = getattr(app.dispatch, "update_cache", None)
+    if not isinstance(cache, dict) or not cache:
+        return []
+
+    revoked: list[str] = []
+    for task in tasks:
+        server_id = task.get("server")
+        if not isinstance(server_id, str) or server_id in revoked:
+            continue
+        row = cache.get(server_id)
+        if isinstance(row, dict) and row.get("trust_status") == "removed":
+            revoked.append(server_id)
+    return revoked
+
+
 async def dispatch_send(
     app: Any,
     logger: Logger,
@@ -571,6 +592,25 @@ async def dispatch_send(
                 if len(parts) >= 2:
                     params["command"] = parts[0]
                     params["args"] = parts[1:]
+
+    # Registry revocation is a hard stop, decided here rather than asked of the
+    # LLM (#39): a "removed" server is one whose vetting the registry withdrew,
+    # and the LLM may still be holding its docs from earlier in the goal. The
+    # whole batch is refused, not just the offending task — silently dropping
+    # one task from a batch the LLM believes it dispatched is the worse failure.
+    revoked = _revoked_servers(app, tasks)
+    if revoked:
+        names = ", ".join(revoked)
+        logger.warning(f"JARVIS: Refusing dispatch to revoked server(s): {names}")
+        emit_activity(app, f"Refused: {names} was revoked.", kind="dispatch")
+        return {
+            "error": (
+                f"Refused to dispatch: {names} was REVOKED by the MCP registry and "
+                "must not be used. Nothing in this batch was sent. Uninstall it with "
+                "uninstall_server, tell the user it was revoked, and use search_tools "
+                "to find a replacement."
+            )
+        }
 
     # Stamp stateful from the server manifest (#206) BEFORE the confirmation
     # gate so the flag also rides on approved_tasks held by a pending

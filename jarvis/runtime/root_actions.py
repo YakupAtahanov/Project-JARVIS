@@ -63,6 +63,35 @@ async def _handle_search_tools(
     await app._act_on_root_response(response, depth + 1)
 
 
+def _drift_row(rows: Any, server_id: str) -> dict | None:
+    """The `dmcp update --check` row describing one server, if present."""
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if isinstance(row, dict) and row.get("id", server_id) == server_id:
+            return row
+    return None
+
+
+async def _registry_state_note(app: Any, logger: Logger, server_id: str) -> str:
+    """Registry drift/revocation marker for a server's SERVER_DOCS block (#39).
+
+    Best-effort by construction: get_server_docs is the step the whole tool flow
+    hangs off, so a dmcp that is missing, slow, or babbling must cost the LLM its
+    docs marker, never its docs.
+    """
+    try:
+        row = _drift_row(await app.dispatch.check_updates(server_id), server_id)
+    except Exception as e:
+        logger.debug(f"JARVIS: update check skipped for '{server_id}': {e}")
+        return ""
+    if not row:
+        return ""
+    if row.get("trust_status") == "removed":
+        return "revoked"
+    return "update" if row.get("update_available") else ""
+
+
 async def _handle_get_server_docs(
     app: Any,
     logger: Logger,
@@ -88,6 +117,19 @@ async def _handle_get_server_docs(
     docs_block = format_server_docs(
         server_id, tools, error=tools_error, configurable_props=configurable_props
     )
+
+    state = await _registry_state_note(app, logger, server_id)
+    if state == "revoked":
+        logger.warning(f"JARVIS: get_server_docs '{server_id}' — server is REVOKED")
+        docs_block = (
+            "WARNING: this server was REVOKED by the registry — do not use; "
+            "inform the user\n" + docs_block
+        )
+    elif state == "update":
+        docs_block += (
+            "\nNOTE: update available for this server — if calls fail, "
+            "update_server and retry"
+        )
 
     if tools and hasattr(app, "mcp_dispatch_docs"):
         app.mcp_dispatch_docs[server_id] = docs_block
@@ -206,6 +248,33 @@ async def _handle_install_server(
         app, logger, context, tag="root-install-result", mode="root"
     )
     await app._act_on_root_response(response, depth + 1)
+
+
+async def _handle_update_server(
+    app: Any,
+    logger: Logger,
+    parsed: dict,
+    depth: int,
+    max_chain_depth: int,
+) -> None:
+    """Re-install a drifted server so the agent can heal it inside one goal (#39)."""
+    server_id = parsed["server_id"]
+    emit_activity(app, f"Updating {server_id}…", kind="dispatch")
+
+    result = await app.dispatch.update_server(server_id)
+    if "error" in result:
+        logger.warning(f"JARVIS: update_server '{server_id}' failed: {result['error']}")
+        await feed_root_summary(app, logger, "UPDATE_ERROR", result["error"], depth)
+        return
+
+    logger.info(f"JARVIS: update_server '{server_id}' succeeded")
+    await feed_root_summary(
+        app,
+        logger,
+        "UPDATE_RESULT",
+        f"{server_id} updated; call get_server_docs to verify",
+        depth,
+    )
 
 
 async def _handle_uninstall_server(
@@ -489,6 +558,10 @@ async def act_on_root_response(
 
     if action == "install_server":
         await _handle_install_server(app, logger, parsed, depth, max_chain_depth)
+        return
+
+    if action == "update_server":
+        await _handle_update_server(app, logger, parsed, depth, max_chain_depth)
         return
 
     if action == "uninstall_server":

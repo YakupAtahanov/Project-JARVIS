@@ -136,6 +136,7 @@ class Jarvis:
         socket_task = runtime_tasks["input_socket"]
         output_task = runtime_tasks["output_socket"]
         gui_task = runtime_tasks["gui_socket"]
+        update_sweep_task = runtime_tasks["update_sweep"]
         voice_thread = runtime_tasks["voice_thread"]
         openai_server = runtime_tasks["openai_server"]
 
@@ -165,6 +166,7 @@ class Jarvis:
             cancel_task_if_running(socket_task)
             cancel_task_if_running(output_task)
             cancel_task_if_running(gui_task)
+            cancel_task_if_running(update_sweep_task)
             join_voice_thread_if_running(voice_thread)
             stop_openai_server_if_running(openai_server)
             if event_tasks:

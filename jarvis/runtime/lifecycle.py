@@ -54,6 +54,58 @@ async def bootstrap_tool_index_nonfatal(
         logger.warning(f"JARVIS: Tool index sync failed (non-fatal): {e}")
 
 
+# Delay before the first registry sweep. Startup already spends its budget on
+# connecting dispatch and syncing the tool index; drift is hours-old news by
+# definition, so it waits until the daemon is answering the user.
+UPDATE_SWEEP_FIRST_DELAY = 60.0
+
+
+async def update_sweep_once(app: Any, logger: Logger, reported: set[str]) -> set[str]:
+    """Refresh the adapter's drift/revocation cache once, returning what it named.
+
+    ``reported`` is the previous pass's notable set: warnings fire on change, not
+    on every sweep, so a revoked server that nobody has uninstalled yet does not
+    turn the log into a wall of the same line every six hours.
+    """
+    try:
+        rows = await app.dispatch.check_updates()
+    except Exception as e:
+        logger.debug(f"JARVIS: registry update sweep failed (non-fatal): {e}")
+        return reported
+
+    cache = {row["id"]: row for row in rows if isinstance(row, dict) and row.get("id")}
+    app.dispatch.update_cache = cache
+
+    notable = set()
+    for sid, row in cache.items():
+        if row.get("trust_status") == "removed":
+            notable.add(f"{sid} REVOKED")
+        elif row.get("update_available"):
+            notable.add(f"{sid} update available")
+
+    if notable and notable != reported:
+        logger.warning("JARVIS: MCP registry sweep — " + ", ".join(sorted(notable)))
+    return notable
+
+
+async def run_update_sweep(app: Any, logger: Logger) -> None:
+    """Poll dmcp for registry drift and revocation on a slow loop (#39).
+
+    Without it a revoked server is only ever discovered by the call that fails
+    on it — too late for dispatch to refuse the call in the first place.
+    """
+    interval = Config.UPDATE_CHECK_INTERVAL_MIN * 60
+    if interval <= 0:
+        return
+
+    reported: set[str] = set()
+    delay = UPDATE_SWEEP_FIRST_DELAY
+    while True:
+        await asyncio.sleep(delay)
+        delay = interval
+        reported = await update_sweep_once(app, logger, reported)
+
+
 def _broadcast_confirmation_notice(app: Any, message: dict[str, Any]) -> None:
     """Forward a confirmation notification to whichever socket(s) have
     clients connected, plus a refreshed pending list for GUI clients so an
@@ -173,6 +225,14 @@ async def start_runtime_services(app: Any, logger: Logger) -> dict[str, Any]:
             has_clients=lambda: bool(app._output_clients) or bool(app._gui_clients),
         )
 
+    update_sweep_task: Optional[asyncio.Task] = None
+    if Config.UPDATE_CHECK_INTERVAL_MIN > 0:
+        update_sweep_task = asyncio.create_task(run_update_sweep(app, logger))
+        logger.info(
+            "JARVIS: Registry update sweep every "
+            f"{Config.UPDATE_CHECK_INTERVAL_MIN}min"
+        )
+
     # Opt-in, off by default -- see jarvis/server/openai_compat.py's
     # module docstring for why this is the one deliberate exception to
     # JARVIS having no TCP listener.
@@ -187,6 +247,7 @@ async def start_runtime_services(app: Any, logger: Logger) -> dict[str, Any]:
         "input_socket": input_socket_task,
         "output_socket": output_socket_task,
         "gui_socket": gui_socket_task,
+        "update_sweep": update_sweep_task,
         "voice_thread": voice_thread,
         "openai_server": openai_server,
     }

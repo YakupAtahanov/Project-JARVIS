@@ -24,6 +24,7 @@ VALID_ACTIONS = {
     "search_tools",
     "get_server_docs",
     "install_server",
+    "update_server",
     "uninstall_server",
     "configure_server",
     # Root — memory (direct operations, no sub-chain)
@@ -126,6 +127,8 @@ class TaskParser:
             return f", server_id={result.get('server_id')}"
         if action == "install_server":
             return f", server_id={result.get('server_id')}"
+        if action == "update_server":
+            return f", server_id={result.get('server_id')}"
         if action == "configure_server":
             keys = list(result.get("config", {}).keys())
             return f", server_id={result.get('server_id')}, keys={keys}"
@@ -207,6 +210,18 @@ def _parse_install_server(response: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "install_server requires 'server_id'", "raw": response}
     return {
         "action": "install_server",
+        "server_id": str(server_id),
+        "goal_updates": response.get("goal_updates", []),
+    }
+
+
+@_parser("update_server")
+def _parse_update_server(response: Dict[str, Any]) -> Dict[str, Any]:
+    server_id = response.get("server_id", "")
+    if not server_id:
+        return {"error": "update_server requires 'server_id'", "raw": response}
+    return {
+        "action": "update_server",
         "server_id": str(server_id),
         "goal_updates": response.get("goal_updates", []),
     }

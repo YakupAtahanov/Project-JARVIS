@@ -31,6 +31,7 @@ from .discovery import index_server as discovery_index_server
 from .discovery import normalize_count as discovery_normalize_count
 from .discovery import server_count as discovery_server_count
 from .discovery import sync_index as discovery_sync_index
+from .dmcp_registry import check_updates as registry_check_updates
 from .dmcp_registry import get_server_manifest as registry_get_server_manifest
 from .dmcp_registry import install_server as registry_install_server
 from .dmcp_registry import list_server_tools as registry_list_server_tools
@@ -38,6 +39,7 @@ from .dmcp_registry import run_dmcp as registry_run_dmcp
 from .dmcp_registry import run_server_setup as registry_run_server_setup
 from .dmcp_registry import search_servers as registry_search_servers
 from .dmcp_registry import uninstall_server as registry_uninstall_server
+from .dmcp_registry import update_server as registry_update_server
 from .transport import call_tool as transport_call_tool
 from .transport import connect as transport_connect
 from .transport import disconnect as transport_disconnect
@@ -67,6 +69,10 @@ class DispatchAdapter:
         # merger exists; the MCP logging handler in transport reads it at call
         # time, so it is safe for it to be None during early connect.
         self._signal_sink: Optional[Callable[[Dict[str, Any]], None]] = None
+        # Registry drift/revocation rows from the periodic sweep (#39), keyed by
+        # server id. Empty until the first sweep runs, so every reader must treat
+        # an absent entry as "no known constraint" rather than as a verdict.
+        self.update_cache: Dict[str, Dict[str, Any]] = {}
 
     def set_signal_sink(self, sink: Optional[Callable[[Dict[str, Any]], None]]) -> None:
         """Register where pushed dispatch signals are delivered (#26)."""
@@ -299,11 +305,21 @@ class DispatchAdapter:
         return await registry_run_dmcp(logger, *args)
 
     async def search_servers(self, keywords: List[str]) -> Dict[str, Any]:
-        return await registry_search_servers(logger, keywords)
+        return await registry_search_servers(logger, keywords, self.update_cache)
 
     async def install_server(self, server_id: str) -> Dict[str, Any]:
         """Install an MCP server from registry via `dmcp install`."""
         return await registry_install_server(logger, server_id)
+
+    async def update_server(self, server_id: str) -> Dict[str, Any]:
+        """Re-install a drifted MCP server via `dmcp update <id>`."""
+        return await registry_update_server(logger, server_id)
+
+    async def check_updates(
+        self, server_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Return dmcp's drift/revocation rows for one server, or all installed."""
+        return await registry_check_updates(logger, server_id)
 
     async def uninstall_server(self, server_id: str) -> Dict[str, Any]:
         """Uninstall an MCP server via `dmcp uninstall`."""
