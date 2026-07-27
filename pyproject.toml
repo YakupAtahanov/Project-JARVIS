@@ -69,6 +69,16 @@ voice = [
     "numpy>=2.2.0",
 ]
 
+# faster-whisper speech-to-text (Project-JARVIS#138) -- higher accuracy than
+# Vosk on technical vocabulary and longer utterances, at a higher RAM and CPU
+# cost. Deliberately NOT folded into `voice`: Vosk stays the default so
+# low-RAM systems keep working unchanged. Pulls in `voice-input` because the
+# wake word still runs on Vosk and the mic path still needs sounddevice.
+voice-whisper = [
+    "project-jarvis[voice-input]",
+    "faster-whisper>=1.0.0",
+]
+
 # Acoustic echo cancellation (Project-JARVIS#143) -- prevents the mic from
 # picking up JARVIS's own TTS output (esp. its own wake word) during
 # barge-in. Native-compiled (needs a C++ toolchain); pulls in `voice` since

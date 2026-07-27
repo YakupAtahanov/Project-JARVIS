@@ -177,9 +177,9 @@ Built on [Textual](https://textual.textualize.io/). All platform-agnostic.
 | `audio.py` | Shared audio device init (PyAudio / sounddevice) |
 | `base.py` | `STTProvider`, `TTSProvider`, `ActivationProvider`, `EchoCanceller` ABCs |
 | `chime.py` | Wake-word earcon: path validation + best-effort playback |
-| `stt/` | Vosk STT provider |
+| `stt/` | STT providers — Vosk (default) plus optional faster-whisper for utterances, selected by `STT_PROVIDER` (#138) |
 | `tts/` | Piper TTS provider |
-| `activation/` | Wake-word detection (Vosk-based) |
+| `activation/` | Wake-word detection (Vosk-based, regardless of `STT_PROVIDER`) |
 | `aec/` | Acoustic echo cancellation provider (WebRTC-backed) |
 
 Voice runs in a background thread (`voice_activation_thread.py` in `runtime/`). When a wake word fires: the daemon unconditionally broadcasts `{"type": "wake_word_detected"}` over the GUI socket, transitions to `VoiceState.WOKEN`, plays the wake chime (blocking — see below), then opens the STT capture window and injects the utterance into `EventMerger` as a `USER_INPUT` event (via `inject_user_input`) once it completes. If the user says nothing within `VOICE_ACTIVATION_TIMEOUT` seconds, capture is abandoned and control returns to wake-word mode without processing anything; the timeout is disabled the moment speech is detected, so mid-sentence pauses never cut a command off early.

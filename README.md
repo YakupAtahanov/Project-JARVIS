@@ -168,9 +168,10 @@ jarvis
 JARVIS supports optional dependencies for flexible installation:
 
 - **`project-jarvis`** - Core package (CLI/Text mode only)
-- **`project-jarvis[voice-input]`** - Add speech-to-text support
+- **`project-jarvis[voice-input]`** - Add speech-to-text support (Vosk)
 - **`project-jarvis[voice-output]`** - Add text-to-speech support
 - **`project-jarvis[voice]`** - Full voice support (input + output)
+- **`project-jarvis[voice-whisper]`** - faster-whisper speech-to-text (opt-in; includes voice-input, more accurate than Vosk but needs more RAM). Not part of `voice` or `all`.
 - **`project-jarvis[tui]`** - Interactive terminal UI (`jarvis tui`)
 - **`project-jarvis[voice-aec]`** - Acoustic echo cancellation for barge-in (includes voice; needs a C++ toolchain)
 - **`project-jarvis[dev]`** - Development tools (pytest, black, etc.)
@@ -336,6 +337,13 @@ VOICE_ACTIVATION_SENSITIVITY=0.8
 # platform data dir (Linux: ~/.local/share/jarvis/models), not cwd-relative.
 # VOSK_MODEL_PATH=/home/you/.local/share/jarvis/models/vosk/vosk-model-small-en-us-0.15
 
+# Speech-to-text engine for utterances: "vosk" (default) or "faster-whisper"
+# (needs the voice-whisper extra; weights auto-download to <models dir>/whisper
+# on first use). Wake-word detection stays on Vosk either way.
+# STT_PROVIDER=vosk
+# WHISPER_MODEL_SIZE=small      # tiny | base | small | medium | large-v3
+# WHISPER_MODEL_DIR=/home/you/.local/share/jarvis/models/whisper
+
 # Logging configuration (optional)
 LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_FILE=logs/jarvis.log      # Optional: enable file logging
@@ -350,6 +358,7 @@ LOG_COLORS=true               # Colored console output
 - **🔄 Smart Switching**: Automatically switches between listening modes
 - **📊 Detection Statistics**: Track wake word detection performance
 - **🛡️ Privacy-First**: All processing happens locally on your device
+- **🎚️ Pluggable Transcription**: The utterance phase can run on Vosk (default) or faster-whisper (`STT_PROVIDER=faster-whisper`); if the package or model is missing at startup, JARVIS logs the reason and falls back to Vosk. Accuracy and latency figures for the whisper path have not yet been measured on real hardware.
 
 ### **Usage Modes**
 
@@ -472,6 +481,8 @@ When opening PRs or issues, use the repository templates for faster triage and r
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-27:* voice section now names both STT engines (#138) — Vosk stays the default and the only wake-word engine; faster-whisper is an opt-in `voice-whisper` extra for utterance transcription, excluded from `voice` and `all`. Its accuracy/latency on real hardware is unverified: no audio device or model was available where it was implemented.
 
 *2026-07-24:* threat-table rows 4/5 settled to **implemented** to match the canonical `docs/SECURITY-ARCHITECTURE.md` — the `shellmcp` `run_command` gap (#159/#162) is closed by the author-proof host floor in `jarvis/core/threat_level.py`, which a manifest cannot lower; models base dir corrected from cwd-relative `models/` to the platform data dir (`~/.local/share/jarvis/models` on Linux) in both the install steps and the Vosk config sample, matching `Config.MODELS_DIR`.
 

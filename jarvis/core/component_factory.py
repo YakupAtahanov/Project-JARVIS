@@ -321,6 +321,8 @@ class ComponentFactory:
             stt = create_stt(
                 provider=Config.STT_PROVIDER,
                 model_path=Config.VOSK_MODEL_PATH,
+                model_size=Config.WHISPER_MODEL_SIZE,
+                model_dir=Config.WHISPER_MODEL_DIR,
                 sample_rate=16000,
                 chunk_size=4000,
                 silence_timeout=1.0,
@@ -328,6 +330,8 @@ class ComponentFactory:
                 echo_canceller=echo_canceller,
             )
 
+            # Wake-word detection is deliberately not swapped with STT_PROVIDER:
+            # it always runs the Vosk activation model (#138).
             activation = create_activation(
                 provider=Config.ACTIVATION_PROVIDER,
                 wake_words=Config.WAKE_WORDS,

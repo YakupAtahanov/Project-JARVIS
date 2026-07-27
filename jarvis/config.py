@@ -30,8 +30,11 @@ class Config:
     )
 
     # Voice Provider Configuration
-    STT_PROVIDER = os.getenv("STT_PROVIDER", "vosk")  # "vosk" (add more later)
+    STT_PROVIDER = os.getenv("STT_PROVIDER", "vosk")  # "vosk" | "faster-whisper"
     TTS_PROVIDER = os.getenv("TTS_PROVIDER", "piper")  # "piper" (add more later)
+    # Wake-word engine. Stays Vosk even when STT_PROVIDER is faster-whisper:
+    # activation needs a continuously running, low-latency recognizer, which
+    # is the opposite of what a batch model like Whisper is good at (#138).
     ACTIVATION_PROVIDER = os.getenv(
         "ACTIVATION_PROVIDER", "vosk"
     )  # "vosk" (add more later)
@@ -40,6 +43,18 @@ class Config:
     VOSK_MODEL_PATH = os.getenv(
         "VOSK_MODEL_PATH",
         os.path.join(MODELS_DIR, "vosk", "vosk-model-small-en-us-0.15"),
+    )
+
+    # faster-whisper STT Configuration (#138) -- utterance transcription only.
+    # Model tier: tiny/base/small/medium/large-v3. "small" balances accuracy
+    # against the CPU latency and ~500MB peak RAM of a local Whisper run.
+    WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")
+    # Download/cache root for Whisper weights, auto-fetched on first use.
+    # Lives under MODELS_DIR like every other JARVIS model rather than in the
+    # huggingface hub default (~/.cache/huggingface).
+    WHISPER_MODEL_DIR = os.getenv(
+        "WHISPER_MODEL_DIR",
+        os.path.join(MODELS_DIR, "whisper"),
     )
 
     # Ollama-specific

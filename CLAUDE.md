@@ -15,7 +15,7 @@ Project-JARVIS (Python)     — daemon, LLM orchestration, interfaces
   jarvis/core/              — security, confirmation, logging, I/O
   jarvis/tui/               — Textual TUI (decomposed into ~12 modules)
   jarvis/llm/               — provider-agnostic LLM layer (Ollama local + OpenAI-compatible API providers, ProviderPool failover)
-  jarvis/voice/             — STT (Vosk) + TTS (Piper)
+  jarvis/voice/             — STT (Vosk default, optional faster-whisper for utterances) + TTS (Piper)
   jarvis/sessions/          — session persistence
   jarvis/runtime/           — event loop, action handlers
   jarvis/contextor/         — adapter + embeddings for the Rust contextor memory binary
@@ -153,6 +153,7 @@ prompt stays the boundary on every platform:
 | `project-jarvis[voice-input]` | Vosk STT only |
 | `project-jarvis[voice-output]` | Piper TTS only |
 | `project-jarvis[voice]` | Vosk STT + Piper TTS |
+| `project-jarvis[voice-whisper]` | faster-whisper STT for utterances (opt-in, includes voice-input; not in `voice` or `all`) |
 | `project-jarvis[voice-aec]` | Voice + acoustic echo cancellation (native-compiled, barge-in fix) |
 | `project-jarvis[dev]` | pytest, black, isort, flake8, mypy, pre-commit |
 | `project-jarvis[docs]` | Documentation tools (sphinx) |
@@ -209,6 +210,8 @@ make check                  # Format + lint + typecheck + tests
 | `jarvis/dispatch/boundary.py` | Output-provenance boundary verification (#165) |
 | `jarvis/core/command_parser.py` | LLM response parser + action registry |
 | `jarvis/core/voice_state.py` | `VoiceState` — formal voice/response session state machine |
+| `jarvis/voice/stt/__init__.py` | `create_stt()` — `STT_PROVIDER` → provider class, with the one logged Vosk fallback (#138) |
+| `jarvis/voice/stt/whisper_stt.py` | `WhisperSTT` — faster-whisper utterance transcription (lazy import, `is_available()`/`ensure_model()` never raise) |
 | `jarvis/voice/chime.py` | Wake-word earcon: path validation + best-effort playback |
 | `jarvis/voice/audio.py` | Audio device detection + `passes_noise_gate` RMS filter |
 | `jarvis/voice/aec/webrtc_aec.py` | `WebRtcAEC` — acoustic echo cancellation (barge-in fix, #143) |
@@ -228,5 +231,7 @@ make check                  # Format + lint + typecheck + tests
 ---
 
 ## Changelog — corrected claims
+
+*2026-07-27:* STT is no longer Vosk-only (#138) — `STT_PROVIDER=faster-whisper` swaps the utterance transcriber for faster-whisper (`voice-whisper` extra, weights auto-downloaded under `MODELS_DIR/whisper`), degrading to Vosk once, logged, when the package or model is missing. Wake-word activation is unchanged and still Vosk. Verified by unit tests against a mocked `faster_whisper`; not yet exercised on real audio hardware.
 
 *2026-07-22:* extras renamed to `project-jarvis` and completed (voice-input/voice-output/docs); tier table rewritten to match `should_confirm` (ELEVATED confirms, no audit log, no unconditional FORBIDDEN — `allow_all` bypasses all tiers); `smart` mode described as the TLA classifier (max of host floor, manifest level, payload scan); LLM layer documented as provider-agnostic with the shipped failover pool (#78 moved out of Planned Work); socket security corrected to the three `JARVIS_DATA_DIR` endpoints; added Output-Provenance Boundary (#165), Sudo Management (#158), `jarvis/contextor/`, `jarvis/platform/`, and `shellmcp/`.
