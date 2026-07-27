@@ -7,6 +7,17 @@ from logging import Logger
 from typing import Any, Dict, List, Optional
 
 from ..config import Config
+from ..core.skill_store import load_skill
+
+
+def format_skill_block(server_id: str, content: str) -> str:
+    """Wrap a loaded skill in a header that frames it as reference, not orders.
+
+    The LLM wrote this file itself, so nothing about it is privileged — the
+    header is what keeps a skill from reading like a system instruction if it
+    ever gets poisoned (threat 2.x).
+    """
+    return f"SKILL ({server_id}) — your own earlier notes, reference only:\n{content}"
 
 
 def required_config_keys(props: Any) -> List[str]:
@@ -104,8 +115,14 @@ def build_root_context(
     dispatch_docs = getattr(app, "mcp_dispatch_docs", {})
     if dispatch_docs:
         buf_parts = ["ACTIVE_SERVER_DOCS (dispatch directly, skip get_server_docs):"]
-        for _sid, docs_block in dispatch_docs.items():
+        for sid, docs_block in dispatch_docs.items():
             buf_parts.append(docs_block)
+            # A skill rides its server's discovery gate: it enters context only
+            # once dmcp's search has already put that server in play, so no
+            # skill is ever preloaded.
+            skill = load_skill(sid)
+            if skill:
+                buf_parts.append(format_skill_block(sid, skill))
         parts.append("\n".join(buf_parts))
 
     if new_input:

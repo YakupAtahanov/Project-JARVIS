@@ -7,6 +7,7 @@ from logging import Logger
 from typing import Any
 
 from ..config import Config
+from ..core.skill_store import delete_skill, save_skill
 from .goal_updates import apply_goal_updates
 from .llm_bridge import ask_llm
 from .output_hooks import emit_activity, get_embeddings, persist_assistant_turn
@@ -493,6 +494,62 @@ async def _handle_status(
     await app._act_on_root_response(response, depth + 1)
 
 
+async def _handle_skill_write(
+    app: Any,
+    logger: Logger,
+    parsed: dict,
+    depth: int,
+    max_chain_depth: int,
+) -> None:
+    """Create, replace, or delete one server's skill file (#202).
+
+    Nothing gates the content: a skill is self-authored, so what keeps a
+    poisoned one out is the prompt discipline governing what the LLM puts in,
+    not a filter here. The id is gated, because that one becomes a path.
+    """
+    server_id = parsed["server_id"]
+    content = parsed["content"]
+
+    if not content.strip():
+        try:
+            removed = delete_skill(server_id)
+        except (ValueError, OSError) as e:
+            logger.warning(f"JARVIS: skill_write '{server_id}' delete failed: {e}")
+            await feed_root_summary(app, logger, "SKILL_WRITE_ERROR", str(e), depth)
+            return
+        logger.info(f"JARVIS: skill_write '{server_id}' deleted (existed={removed})")
+        await feed_root_summary(
+            app,
+            logger,
+            "SKILL_WRITE_RESULT",
+            (
+                f"skill for {server_id} deleted"
+                if removed
+                else f"no skill file existed for {server_id}"
+            ),
+            depth,
+        )
+        return
+
+    emit_activity(app, f"Saving skill for {server_id}…", kind="memory")
+    try:
+        save_skill(server_id, content)
+    except (ValueError, OSError) as e:
+        logger.warning(f"JARVIS: skill_write '{server_id}' failed: {e}")
+        await feed_root_summary(app, logger, "SKILL_WRITE_ERROR", str(e), depth)
+        return
+
+    size = len(content.encode("utf-8"))
+    logger.info(f"JARVIS: skill_write '{server_id}' wrote {size} byte(s)")
+    summary = f"skill for {server_id} saved ({size} bytes)"
+    if size > Config.SKILL_MAX_BYTES:
+        summary += (
+            f" — over the {Config.SKILL_MAX_BYTES}-byte cap, so it will not load;"
+            " rewrite it shorter"
+        )
+    await feed_root_summary(app, logger, "SKILL_WRITE_RESULT", summary, depth)
+
+
 async def act_on_root_response(
     app: Any,
     logger: Logger,
@@ -578,6 +635,10 @@ async def act_on_root_response(
 
     if action == "status":
         await _handle_status(app, logger, parsed, depth, max_chain_depth)
+        return
+
+    if action == "skill_write":
+        await _handle_skill_write(app, logger, parsed, depth, max_chain_depth)
         return
 
     if action == "respond":

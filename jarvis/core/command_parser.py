@@ -5,7 +5,7 @@ Validates and parses LLM responses into structured actions.
 
 ROOT mode actions:  respond, dispatch (route),
                     store, recall, search_memory, list_memory (memory),
-                    analyze_image (vision)
+                    analyze_image (vision), skill_write (per-server skill files)
 DISPATCH mode actions: plan, search, list_tools, install, dispatch (tasks),
                        wait, kill, defer, done
 """
@@ -34,6 +34,8 @@ VALID_ACTIONS = {
     "list_memory",
     # Root — vision (delegates to a vision-capable provider in the pool)
     "analyze_image",
+    # Root — per-server skill files (#202)
+    "skill_write",
     # Root — read-only task/goal introspection (#191)
     "status",
     # Dispatch subsystem
@@ -148,6 +150,11 @@ class TaskParser:
             return f", query='{query}', top_k={result.get('top_k', 5)}, offset={offset}"
         if action == "analyze_image":
             return f", path={result.get('path')}"
+        if action == "skill_write":
+            return (
+                f", server_id={result.get('server_id')}, "
+                f"chars={len(result.get('content', ''))}"
+            )
         if action == "status":
             return f", goal_id={result.get('goal_id')}"
         return ""
@@ -270,6 +277,24 @@ def _parse_status(response: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "action": "status",
         "goal_id": str(goal_id) if goal_id else None,
+        "goal_updates": response.get("goal_updates", []),
+    }
+
+
+@_parser("skill_write")
+def _parse_skill_write(response: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse skill_write — full-file replace of one server's skill file (#202).
+
+    ``content`` is required but may be empty: an empty string is the delete,
+    so absent content must reach the handler rather than fail validation.
+    """
+    server_id = response.get("server_id", "")
+    if not server_id:
+        return {"error": "skill_write requires 'server_id'", "raw": response}
+    return {
+        "action": "skill_write",
+        "server_id": str(server_id),
+        "content": str(response.get("content") or ""),
         "goal_updates": response.get("goal_updates", []),
     }
 
