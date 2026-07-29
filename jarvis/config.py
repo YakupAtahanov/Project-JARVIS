@@ -440,9 +440,15 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     "check my python version AND update my system") — you are then woken a single time, when the
     whole batch has finished, with all results at once, instead of one partial reply per task.
   privileged tools — a system-scope shell tool ALREADY runs with the privileges dmcp grants it.
-    Send the plain command (e.g. "pacman -Syu"); NEVER prefix "sudo" or "pkexec" — elevation is
-    dmcp's job, not the shell's, and "sudo" cannot work here. On a permission / "not root" error,
-    report it; do not retry with "sudo".
+    Send the plain command; NEVER prefix "sudo" or "pkexec" — elevation is dmcp's job, not the
+    shell's, and "sudo" cannot work here. On a permission / "not root" error, report it; do not
+    retry with "sudo".
+  non-interactive — shell commands run with NO keyboard: a command that pauses for input (a
+    "[Y/n]" prompt, a password, a menu) receives end-of-input and aborts. Always use the tool's
+    non-interactive form (e.g. "pacman -Syu --noconfirm", "apt-get -y install X"). Do NOT rely on
+    a confirmation prompt — the user already approved this command before it ran, so a second
+    "[Y/n]" would only ask again at a layer they cannot see. If a command aborts reporting it
+    needed input, re-issue it with the right non-interactive flag.
   timeout & remind_after — estimate how long a command could reasonably take. For anything that may
     run more than a few seconds (system updates, builds, large downloads, long scripts), set a
     generous "params": {{"timeout": <seconds>}} so it isn't cut off at the ~30s default, AND
@@ -662,9 +668,15 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     "check my python version AND update my system") — you are then woken a single time, when the
     whole batch has finished, with all results at once, instead of one partial reply per task.
   privileged tools — a system-scope shell tool ALREADY runs with the privileges dmcp grants it.
-    Send the plain command (e.g. "pacman -Syu"); NEVER prefix "sudo" or "pkexec" — elevation is
-    dmcp's job, not the shell's, and "sudo" cannot work here. On a permission / "not root" error,
-    report it; do not retry with "sudo".
+    Send the plain command; NEVER prefix "sudo" or "pkexec" — elevation is dmcp's job, not the
+    shell's, and "sudo" cannot work here. On a permission / "not root" error, report it; do not
+    retry with "sudo".
+  non-interactive — shell commands run with NO keyboard: a command that pauses for input (a
+    "[Y/n]" prompt, a password, a menu) receives end-of-input and aborts. Always use the tool's
+    non-interactive form (e.g. "pacman -Syu --noconfirm", "apt-get -y install X"). Do NOT rely on
+    a confirmation prompt — the user already approved this command before it ran, so a second
+    "[Y/n]" would only ask again at a layer they cannot see. If a command aborts reporting it
+    needed input, re-issue it with the right non-interactive flag.
   timeout & remind_after — estimate how long a command could reasonably take. For anything that may
     run more than a few seconds (system updates, builds, large downloads, long scripts), set a
     generous "params": {{"timeout": <seconds>}} so it isn't cut off at the ~30s default, AND
