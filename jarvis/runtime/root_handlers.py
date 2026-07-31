@@ -9,7 +9,6 @@ from logging import Logger
 from typing import Any
 
 from ..core.voice_state import VoiceState
-from .elicitation_flow import handle_elicitation_confirmation, route_needs_action
 from .io import broadcast_to_gui_clients, enrich_pending_with_goals, set_gui_state
 from .llm_bridge import ask_llm
 from .output_hooks import emit_activity
@@ -188,15 +187,6 @@ async def on_dispatch_signal(app: Any, logger: Logger, signal: dict[str, Any]) -
 
     sig_type = signal.get("type")
     sig_pid = signal.get("pid")
-
-    # A server asking a question mid-tool-call (#210). This is not a task
-    # outcome — the task is alive and blocked — so it does not flow through the
-    # generic goal-context/ask path below. Route it to the elicitation policy,
-    # which decides whether ROOT or a human answers, and return.
-    if sig_type == "NEEDS_ACTION":
-        await route_needs_action(app, logger, signal)
-        return
-
     logger.info(
         f"JARVIS: Dispatch signal: type={sig_type}, pid={sig_pid}"
         + (" (task already completed — REMIND+EXIT merged)" if remind_completed else "")
@@ -319,13 +309,6 @@ async def on_dispatch_signals(
 async def on_confirmation_response(
     app: Any, logger: Logger, data: dict[str, Any]
 ) -> None:
-    # A human's answer to a server's mid-task question (#210) rides the same
-    # confirmation_response channel as a tool approval. Deliver it to the waiting
-    # elicitation path first; if it belongs there, the task-confirmation logic
-    # below must not also run on it.
-    if handle_elicitation_confirmation(app, logger, data):
-        return
-
     pending = app.confirmation.resolve(data)
     if pending is None:
         return

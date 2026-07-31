@@ -5,8 +5,7 @@ Validates and parses LLM responses into structured actions.
 
 ROOT mode actions:  respond, dispatch (route),
                     store, recall, search_memory, list_memory (memory),
-                    analyze_image (vision), skill_write (per-server skill files),
-                    answer_prompt (answer a server's mid-task question, #210)
+                    analyze_image (vision), skill_write (per-server skill files)
 DISPATCH mode actions: plan, search, list_tools, install, dispatch (tasks),
                        wait, kill, defer, done
 """
@@ -39,8 +38,6 @@ VALID_ACTIONS = {
     "skill_write",
     # Root — read-only task/goal introspection (#191)
     "status",
-    # Root — answer a question a server asked mid-tool-call (#210, elicitation)
-    "answer_prompt",
     # Dispatch subsystem
     "plan",
     "search",
@@ -160,11 +157,6 @@ class TaskParser:
             )
         if action == "status":
             return f", goal_id={result.get('goal_id')}"
-        if action == "answer_prompt":
-            return (
-                f", pid={result.get('pid')}, decision={result.get('decision')}"
-                + (", escalate=True" if result.get("escalate") else "")
-            )
         return ""
 
 
@@ -303,38 +295,6 @@ def _parse_skill_write(response: Dict[str, Any]) -> Dict[str, Any]:
         "action": "skill_write",
         "server_id": str(server_id),
         "content": str(response.get("content") or ""),
-        "goal_updates": response.get("goal_updates", []),
-    }
-
-
-@_parser("answer_prompt")
-def _parse_answer_prompt(response: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse answer_prompt — the model's answer to a server's mid-task question (#210).
-
-    ``pid`` is required (there is no prompt to answer without it) and must be an
-    int. ``decision`` is validated leniently: an unrecognized value is normalized
-    to ``"decline"`` at the handler rather than failing here, so a malformed
-    answer safely unblocks the parked task instead of looping on a parse error.
-    ``content`` (the answer object for ``accept``) and ``escalate`` (hand the
-    question to a human instead) are optional.
-    """
-    pid = response.get("pid")
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return {"error": "answer_prompt requires an integer 'pid'", "raw": response}
-
-    decision = str(response.get("decision") or response.get("action_choice") or "decline")
-    content = response.get("content")
-    if content is not None and not isinstance(content, dict):
-        content = None
-
-    return {
-        "action": "answer_prompt",
-        "pid": pid,
-        "decision": decision,
-        "content": content,
-        "escalate": bool(response.get("escalate")),
         "goal_updates": response.get("goal_updates", []),
     }
 
