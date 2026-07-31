@@ -550,6 +550,81 @@ async def _handle_skill_write(
     await feed_root_summary(app, logger, "SKILL_WRITE_RESULT", summary, depth)
 
 
+async def _handle_answer_prompt(
+    app: Any,
+    logger: Logger,
+    parsed: dict,
+    depth: int,
+    max_chain_depth: int,
+) -> None:
+    """Answer a question a server asked mid-task (#210), on the model's behalf.
+
+    The model reaches here only for a ROUTE-to-ROOT (benign, non-credential)
+    prompt — the elicitation policy sends credential and escalated prompts to a
+    human before the model ever sees them. Two guards still hold at the point of
+    action, as correctness rather than trust:
+
+    * If the stashed prompt is (or has become) a credential, the model must not
+      answer it: hand it to a human, or decline if none is reachable.
+    * If the model voluntarily escalates, treat it as a human prompt.
+
+    Otherwise the model's decision (accept/decline/cancel) is delivered to the
+    parked task. An unknown decision is normalized to decline so a malformed
+    answer still unblocks the task instead of hanging it. The turn then goes
+    quiet: the resumed task's next signal drives ROOT.
+    """
+    from ..core import elicitation
+    from .elicitation_flow import respond_to_prompt, route_human_prompt
+
+    pid = parsed["pid"]
+    decision = parsed.get("decision", "decline")
+    content = parsed.get("content")
+    escalate = bool(parsed.get("escalate"))
+
+    stash = getattr(app, "_needs_action_prompts", None)
+    described = stash.pop(pid, None) if isinstance(stash, dict) else None
+
+    is_credential = bool(described and described.get("credential"))
+    if described and not is_credential:
+        # Defense in depth: re-derive from the stashed prompt, never trust the
+        # disposition alone, so a policy slip cannot let the model answer a secret.
+        is_credential = elicitation.is_credential_prompt(
+            described.get("message"), described.get("schema")
+        )
+
+    if escalate or is_credential:
+        if is_credential:
+            logger.warning(
+                "JARVIS: answer_prompt for a credential pid=%s — routing to a human, "
+                "not the model",
+                pid,
+            )
+        if described:
+            await route_human_prompt(app, logger, described)
+        else:
+            # Nothing to attribute or route to; decline to unblock the task safely.
+            await respond_to_prompt(app, logger, pid, "decline")
+        return
+
+    if decision not in ("accept", "decline", "cancel"):
+        logger.warning(
+            "JARVIS: answer_prompt unknown decision %r for pid=%s — declining",
+            decision,
+            pid,
+        )
+        decision = "decline"
+    if decision != "accept":
+        content = None
+
+    result = await respond_to_prompt(app, logger, pid, decision, content)
+    if isinstance(result, dict) and result.get("error"):
+        await feed_root_summary(
+            app, logger, "ANSWER_PROMPT_ERROR", str(result["error"]), depth
+        )
+        return
+    emit_activity(app, f"Answered a server's prompt (pid {pid}): {decision}", kind="dispatch")
+
+
 async def act_on_root_response(
     app: Any,
     logger: Logger,
@@ -639,6 +714,10 @@ async def act_on_root_response(
 
     if action == "skill_write":
         await _handle_skill_write(app, logger, parsed, depth, max_chain_depth)
+        return
+
+    if action == "answer_prompt":
+        await _handle_answer_prompt(app, logger, parsed, depth, max_chain_depth)
         return
 
     if action == "respond":

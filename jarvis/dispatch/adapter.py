@@ -173,6 +173,50 @@ class DispatchAdapter:
             timeout=_WAIT_TIMEOUT,
         )
 
+    async def respond(
+        self,
+        pid: int,
+        action: str,
+        content: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Answer a question a server asked mid-tool-call (#210, elicitation).
+
+        A running MCP server can pause inside a tool call and ask for input
+        (MCP ``elicitation/create``). dispatch parks that task in ``Waiting``,
+        emits a ``NEEDS_ACTION`` signal, and exposes a ``respond`` MCP tool that
+        delivers the answer and resumes the task. This mirrors ``wait_task``:
+        it calls that ``respond`` tool and returns the result.
+
+        Args:
+            pid: The parked task's PID (from the NEEDS_ACTION signal).
+            action: ``"accept"``, ``"decline"``, or ``"cancel"``.
+            content: For ``accept``, the answer object matching the server's
+                requested schema. Omitted for decline/cancel.
+
+        Returns:
+            The dispatch tool result, or a dict with an ``error`` key. Never
+            raises — a failure here must resolve to a reported error so the
+            caller can still unblock the task, never propagate into the loop.
+        """
+        if not require_connection(self, logger, "respond"):
+            return {"error": "Not connected to dispatch"}
+
+        params: Dict[str, Any] = {"pid": pid, "action": action}
+        if content is not None:
+            params["content"] = content
+
+        logger.info(f"Dispatch: respond pid={pid}, action={action}")
+        return await transport_call_tool(
+            self,
+            logger,
+            tool_name="respond",
+            params=params,
+            op_name="respond",
+            timeout_error="respond timed out after {timeout}s",
+            failure_prefix="Failed to deliver prompt response",
+            extractor=self._extract_content,
+        )
+
     async def kill_tasks(self, pids: List[int]) -> Dict[str, Any]:
         if not require_connection(self, logger, "kill_tasks"):
             return {"error": "Not connected to dispatch"}

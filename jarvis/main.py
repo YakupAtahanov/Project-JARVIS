@@ -114,6 +114,12 @@ class Jarvis:
 
         # Server docs scoped to the active dispatch chain — cleared on respond.
         self.mcp_dispatch_docs: dict = {}
+        # Elicitation wiring (#210): prompts a running server asked mid-task.
+        # _needs_action_prompts stashes a ROOT-disposition prompt by pid until
+        # the model answers it (answer_prompt); _elicitation_futures holds the
+        # futures a HUMAN-disposition prompt waits on for the human's yes/no.
+        self._needs_action_prompts: Dict[Any, Dict[str, Any]] = {}
+        self._elicitation_futures: Dict[str, asyncio.Future] = {}
         # Set by the TUI layer to open the server config modal before setup runs.
         # Signature: async (server_id, server_name, server_desc, props, saved) -> ConfigModalResult
         self.config_modal_callback: Any = None
