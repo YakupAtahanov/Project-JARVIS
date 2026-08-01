@@ -96,6 +96,44 @@ def _exit(pid, output=""):
     return {"type": "EXIT", "pid": pid, "data": output}
 
 
+def _wrapped_exit(pid, nonce, status, body):
+    """An EXIT shaped like dispatch's: status stamped ahead of the wrapper."""
+    return {
+        "type": "EXIT",
+        "pid": pid,
+        "nonce": nonce,
+        "data": f"[hash={nonce}] {status} <{nonce}>{body}</{nonce}>",
+    }
+
+
+def _run_job():
+    return [
+        {
+            "server": "jarvis-shell-system",
+            "tool": "run_job",
+            "params": {"command": "pacman -Syu", "job": "upg"},
+        }
+    ]
+
+
+def _answer():
+    return [
+        {
+            "server": "jarvis-shell-system",
+            "tool": "send_input",
+            "params": {"job": "upg", "text": "y\n"},
+        }
+    ]
+
+
+# jarvis-shell's send_input reply is deterministic for a given (job, text):
+# every answer to every prompt comes back byte-identical.
+_RECEIPT = (
+    '{"success": true, "job": "upg", "delivered_bytes": 2, '
+    '"result": "Input delivered verbatim to the job\'s terminal"}'
+)
+
+
 # ---------------------------------------------------------------------------
 # GoalManager.record_dispatch — the window-count primitive
 # ---------------------------------------------------------------------------
@@ -448,6 +486,226 @@ def test_confirmation_gated_poll_until_ready_does_not_trip(tmp_path, monkeypatch
     assert app.output_manager.responses == []
     assert app.acted == []
     assert gm.get_all_goals() == [goal]
+
+
+@pytest.mark.unit
+def test_gated_wizard_answers_survive_the_approval_cycle(tmp_path, monkeypatch):
+    """End to end in smart mode: send_input sits at the host floor, so every
+    answer is confirmed, and each approved delivery must age the repeat window
+    out. Both halves matter — an ungated answer would reach a root PTY with no
+    informed consent, and a counted one kills the goal at the third prompt."""
+    from jarvis.core.confirmation_manager import ConfirmationManager
+    from jarvis.runtime import root_handlers
+
+    monkeypatch.setattr(Config, "DISPATCH_REPEAT_LIMIT", 3)
+    monkeypatch.setattr(Config, "CONFIRMATION_MODE", "smart")
+    monkeypatch.setattr(dispatch_flow, "emit_activity", lambda *a, **k: None)
+    monkeypatch.setattr(root_handlers, "emit_activity", lambda *a, **k: None)
+
+    conf = ConfirmationManager()
+
+    async def _no_notify(*a, **k):
+        pass
+
+    monkeypatch.setattr(conf, "_send_notification", _no_notify)
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("update my system")
+
+    state = {"pid": 1}
+
+    class _Dispatch:
+        is_connected = True
+
+        async def list_server_tools(self, server_id):
+            # The shell manifests declare no threat_level on any job tool.
+            return {"tools": [{"name": "send_input"}]}
+
+        async def send_tasks(self, tasks, session_id=None):
+            state["pid"] += 1
+            return {
+                "output": (
+                    f"Signal window (last 1):\n"
+                    f"[10:00:00] PID {state['pid']} INIT sh/send_input {{}}\n"
+                )
+            }
+
+    class _ConfApp:
+        def __init__(self):
+            self.goals = gm
+            self.dispatch = _Dispatch()
+            self.confirmation = conf
+            self.contextor = None
+            self.llm = object()
+            self._gui_clients = None
+            self.output_manager = _OutputManager()
+            self.acted = []
+
+        async def _act_on_root_response(self, response, depth=0):
+            self.acted.append((response, depth))
+
+    app = _ConfApp()
+
+    for i in range(5):
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _answer(), depth=0))
+        if app.output_manager.responses:
+            break  # guard tripped — the bug; assertions below fail cleanly
+        pending = conf.list_pending()
+        assert pending, "send_input reached a root PTY without confirmation"
+        asyncio.run(
+            root_handlers.on_confirmation_response(
+                app, _LOG, {"id": pending[0]["id"], "approved": True}
+            )
+        )
+        gm.update_from_signal(_wrapped_exit(state["pid"], f"a{i}f", 200, _RECEIPT))
+
+    assert app.output_manager.responses == []
+    assert gm.get_all_goals() == [goal]
+
+
+# ---------------------------------------------------------------------------
+# Answering an interactive job (#211) — deliveries are judged on delivery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_delivers_live_input_only_for_a_pure_delivery_batch():
+    assert dispatch_flow._delivers_live_input(_answer()) is True
+    assert dispatch_flow._delivers_live_input(_run_job()) is False
+    assert dispatch_flow._delivers_live_input([]) is False
+    # A batch that also runs something is a normal dispatch: the guard must
+    # keep judging it, or a loop could hide behind one send_input.
+    assert dispatch_flow._delivers_live_input(_answer() + _run_job()) is False
+
+
+@pytest.mark.unit
+def test_successful_delivery_exit_resets_the_window(tmp_path):
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("update my system")
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.link_tasks(goal.id, [2])
+    gm.link_dispatch_fingerprint(goal.id, "fp", [2])
+    assert goal.dispatch_input_fps == ["fp"]
+
+    gm.update_from_signal(_wrapped_exit(2, "aaa", 200, _RECEIPT))
+
+    assert goal.recent_dispatches == []
+
+
+@pytest.mark.unit
+def test_failed_delivery_exit_leaves_the_window_intact(tmp_path):
+    """A delivery into a job that is gone is exactly the no-progress case the
+    guard exists for, so its 500 must not buy the loop another cycle."""
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("update my system")
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.link_tasks(goal.id, [2])
+    gm.link_dispatch_fingerprint(goal.id, "fp", [2])
+
+    gm.update_from_signal(_wrapped_exit(2, "aaa", 500, '{"error": "unknown job"}'))
+
+    assert goal.recent_dispatches == ["fp", "fp"]
+
+
+@pytest.mark.unit
+def test_unverified_delivery_exit_is_not_progress(tmp_path):
+    """Output that failed the provenance boundary carries the UNVERIFIED marker
+    ahead of the status, and untrusted output is evidence of nothing."""
+    from jarvis.dispatch.boundary import UNVERIFIED_MARK
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("update my system")
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.record_dispatch(goal.id, "fp", delivers_input=True)
+    gm.link_tasks(goal.id, [2])
+    gm.link_dispatch_fingerprint(goal.id, "fp", [2])
+
+    signal = _wrapped_exit(2, "aaa", 200, _RECEIPT)
+    signal["data"] = UNVERIFIED_MARK + signal["data"]
+    gm.update_from_signal(signal)
+
+    assert goal.recent_dispatches == ["fp", "fp"]
+
+
+@pytest.mark.unit
+def test_answering_a_wizard_does_not_trip_the_guard(tmp_path, monkeypatch):
+    """The taught loop (#211): pacman -Syu as a job, then one send_input per
+    "[Y/n]" it asks. The answers are byte-identical — same job, same "y\\n", and
+    a receipt that never varies — so counting them as repeats killed the goal on
+    the third prompt and orphaned a root-owned transaction parked at a prompt."""
+    state = {"pid": 1, "sends": 0}
+    _patch(monkeypatch, state, limit=3)
+    monkeypatch.setattr(dispatch_flow, "ask_llm", _boom("guard must not call the LLM"))
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    goal = gm.add_goal("update my system")
+    app = _App(gm)
+
+    asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _run_job(), depth=0))
+
+    for i in range(5):
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _answer(), depth=0))
+        if app.output_manager.responses:
+            break  # guard tripped — the bug; assertions below fail cleanly
+        # The run_job task is still parked on its next prompt; only the
+        # delivery exits, with the same receipt every time.
+        gm.update_from_signal(_wrapped_exit(state["pid"], f"a{i}f", 200, _RECEIPT))
+
+    assert app.output_manager.responses == []
+    assert state["sends"] == 6  # the job plus all five answers
+    assert gm.get_all_goals() == [goal]
+
+
+@pytest.mark.unit
+def test_delivery_into_a_dead_job_still_trips(tmp_path, monkeypatch):
+    """Same identical send_input, but the job is gone: every delivery fails, so
+    the exemption must not apply and the loop still ends at the limit."""
+    state = {"pid": 1, "sends": 0}
+    _patch(monkeypatch, state, limit=3)
+    monkeypatch.setattr(dispatch_flow, "ask_llm", _boom("guard must not call the LLM"))
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    gm.add_goal("update my system")
+    app = _App(gm)
+
+    for i in range(6):
+        if app.output_manager.responses:
+            break
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _answer(), depth=0))
+        gm.update_from_signal(
+            _wrapped_exit(state["pid"], f"a{i}f", 500, '{"error": "unknown job upg"}')
+        )
+
+    assert app.output_manager.responses, "loop never short-circuited"
+    assert state["sends"] == 2
+    assert "send_input" in app.output_manager.responses[0]["output"]
+    assert gm.get_all_goals() == []
+
+
+@pytest.mark.unit
+def test_successful_exit_alone_is_not_progress_for_other_tools(tmp_path, monkeypatch):
+    """The exemption is scoped to deliveries: a tool call that keeps succeeding
+    while returning the same nothing (the #205 about:blank snapshot) must still
+    trip, or reading the EXIT status would have gutted the guard."""
+    state = {"pid": 1, "sends": 0}
+    _patch(monkeypatch, state, limit=3)
+    monkeypatch.setattr(dispatch_flow, "ask_llm", _boom("guard must not call the LLM"))
+
+    gm = GoalManager(archive_dir=str(tmp_path))
+    gm.add_goal("fetch page")
+    app = _App(gm)
+
+    for i in range(6):
+        if app.output_manager.responses:
+            break
+        asyncio.run(dispatch_flow.dispatch_execute_tasks(app, _LOG, _snap(), depth=0))
+        gm.update_from_signal(_wrapped_exit(state["pid"], f"a{i}f", 200, ""))
+
+    assert app.output_manager.responses, "loop never short-circuited"
+    assert state["sends"] == 2
+    assert gm.get_all_goals() == []
 
 
 # ---------------------------------------------------------------------------

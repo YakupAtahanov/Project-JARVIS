@@ -131,8 +131,8 @@ and a broken gate erodes trust in the whole mechanism.
 ### 3.3 Threat classification is re-instantiated per OS, or it is a regression.
 
 `jarvis/core/threat_level.py` is the daemon-side TLA gate. Its host floor
-(`HOST_DANGEROUS_TOOLS`, `:38-50`) and payload patterns (`_DANGEROUS_PAYLOAD_PATTERNS`,
-`:82-95`) recognize **only Unix syntax** (`bash`, `rm -rf`, `dd if=`, `| sh`).
+(`HOST_DANGEROUS_TOOLS`, `:38-58`) and payload patterns (`_DANGEROUS_PAYLOAD_PATTERNS`,
+`:90-103`) recognize **only Unix syntax** (`bash`, `rm -rf`, `dd if=`, `| sh`).
 On Windows, `Remove-Item -Recurse -Force`, `del /s /q`, `rd /s /q`, `format`,
 `diskpart clean`, `reg delete HKLM`, `vssadmin delete shadows`,
 `Start-Process -Verb RunAs` all classify **SAFE** and bypass confirmation

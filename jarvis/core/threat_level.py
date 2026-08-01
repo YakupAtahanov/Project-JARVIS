@@ -46,6 +46,14 @@ HOST_DANGEROUS_TOOLS = frozenset(
         "bash",
         "sh",
         "spawn",
+        # The PTY job model is that same execution, addressable: run_job IS
+        # execute_command on a terminal that outlives the call, and send_input
+        # writes arbitrary bytes into that live terminal — a shell one keystroke
+        # away. Gating only the blocking spelling would leave the interactive
+        # one, which is the one to prefer for anything that can pause for input,
+        # running unconfirmed (as root, on the system-scope shell server).
+        "run_job",
+        "send_input",
     }
 )
 

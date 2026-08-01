@@ -20,6 +20,7 @@ can reference past accomplishments and failures.
 
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -62,6 +63,25 @@ def _signal_output_text(signal: Dict[str, Any]) -> str:
     return inner.strip() if isinstance(inner, str) else ""
 
 
+# dispatch stamps the call's status ahead of the provenance wrapper: "200" when
+# the tool succeeded, "500" when it failed (dmcp exits non-zero on a
+# tool-reported isError as well as on an RPC failure), so the status is read
+# from dispatch's own report rather than sniffed out of the tool's payload.
+# Anchored on purpose: a body carrying the UNVERIFIED marker no longer matches,
+# and output that failed the provenance boundary is evidence of nothing.
+_EXIT_OK_RE = re.compile(r"^(?:\[hash=[0-9a-fA-F]+\]\s*)?200\b")
+
+
+def _signal_succeeded(signal: Dict[str, Any]) -> bool:
+    """True when an EXIT reports that the tool call itself succeeded."""
+    body = signal.get("data")
+    if not isinstance(body, str):
+        body = signal.get("message")
+    if not isinstance(body, str):
+        return False
+    return _EXIT_OK_RE.match(body) is not None
+
+
 class GoalStatus(Enum):
     PENDING = "pending"  # Parsed but not yet dispatched
     ACTIVE = "active"  # Tasks dispatched, waiting for results
@@ -96,6 +116,10 @@ class Goal:
     recent_dispatches: List[str] = field(default_factory=list)
     dispatch_pid_fps: Dict[int, str] = field(default_factory=dict)
     dispatch_last_output: Dict[str, str] = field(default_factory=dict)
+    # Fingerprints that only deliver input to a running job: their reply is a
+    # receipt, so "same output again" is their success shape, not a stall. A
+    # list rather than a set — Goal is archived through asdict + json.dumps.
+    dispatch_input_fps: List[str] = field(default_factory=list)
     # Per-PID server attribution, also not LLM-facing. dispatch_pid_fps maps a
     # PID to the whole *batch* fingerprint, which cannot say which task within
     # that batch the PID is; this can, so a per-signal hint names only the
@@ -186,17 +210,25 @@ class GoalManager:
             goal.status = GoalStatus.ACTIVE
             logger.info(f"GoalManager: Goal [{goal_id}] linked to PIDs {new_pids}")
 
-    def record_dispatch(self, goal_id: str, fingerprint: str) -> int:
+    def record_dispatch(
+        self, goal_id: str, fingerprint: str, delivers_input: bool = False
+    ) -> int:
         """Append a dispatch fingerprint to the goal's rolling window and return
         how many times it occurs within that window (#205).
 
         Window-count, not consecutive-equality: a repeating cycle like
         navigate, snapshot, navigate, snapshot, navigate must still trip on
         navigate reaching the limit even though no two are adjacent.
+
+        ``delivers_input`` marks a dispatch that only feeds a running job, so a
+        later EXIT can judge it on delivery rather than on changed output (see
+        _note_dispatch_progress).
         """
         goal = self._find_goal(goal_id)
         if not goal:
             return 0
+        if delivers_input and fingerprint not in goal.dispatch_input_fps:
+            goal.dispatch_input_fps.append(fingerprint)
         goal.recent_dispatches.append(fingerprint)
         window = getattr(Config, "DISPATCH_REPEAT_WINDOW", 12)
         if window > 0 and len(goal.recent_dispatches) > window:
@@ -409,6 +441,15 @@ class GoalManager:
         first result was empty (or a repeat) tripping while content was actually
         changing. A stuck loop (empty or identical output every cycle) still
         leaves the window intact and trips on the count.
+
+        A dispatch that only delivers input to a running job is judged on
+        delivery instead, because changed output is evidence it structurally
+        cannot produce: its reply is a receipt for bytes whose effect appears in
+        the job's own output, and the answers a wizard wants are routinely
+        identical ("y\\n" to every "[Y/n]"). A delivery dispatch's EXIT is
+        therefore progress when it succeeded — the running job consumed the
+        answer — and nothing when it failed, so input aimed at a job that is
+        gone still trips the guard at the limit.
         """
         pid = signal.get("pid")
         fingerprint = goal.dispatch_pid_fps.get(pid)
@@ -417,7 +458,8 @@ class GoalManager:
         output = _signal_output_text(signal)
         prior = goal.dispatch_last_output.get(fingerprint)
         goal.dispatch_last_output[fingerprint] = output
-        if output and prior is not None and output != prior:
+        delivered = fingerprint in goal.dispatch_input_fps and _signal_succeeded(signal)
+        if delivered or (output and prior is not None and output != prior):
             goal.recent_dispatches.clear()
             logger.debug(
                 f"GoalManager: Goal [{goal.id}] dispatch progressed; "

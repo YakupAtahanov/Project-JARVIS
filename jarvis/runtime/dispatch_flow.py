@@ -42,6 +42,24 @@ def _batch_fingerprint(tasks: list[dict[str, Any]]) -> str:
     return _FP_TASK_SEP.join(_task_fingerprint(t) for t in tasks)
 
 
+# Tools whose reply is a delivery receipt, never the work. send_input writes
+# bytes into a job that keeps running, so the effect lands in that job's output;
+# answering a wizard means dispatching the same (job, text) at each prompt
+# ("y\n" to every "[Y/n]"), which is what the repeat guard would otherwise read
+# as a stuck loop. Whether such a dispatch is going anywhere is decided from its
+# EXIT status instead (goal_manager._note_dispatch_progress): a delivered answer
+# is progress, a rejected one — the job is gone — still counts toward the limit.
+_LIVE_INPUT_TOOLS = frozenset({"send_input"})
+
+
+def _delivers_live_input(tasks: list[dict[str, Any]]) -> bool:
+    """True when every task in the batch only feeds input to a running job."""
+    return bool(tasks) and all(
+        str(task.get("tool", "")).split(".")[-1].strip().lower() in _LIVE_INPUT_TOOLS
+        for task in tasks
+    )
+
+
 def _tool_labels(tasks: list[dict[str, Any]]) -> list[str]:
     labels = []
     for task in tasks:
@@ -728,7 +746,9 @@ async def dispatch_execute_tasks(
     # goal and stop before re-sending a tool that keeps returning nothing.
     fingerprint = _batch_fingerprint(tasks)
     if goal_id:
-        count = app.goals.record_dispatch(goal_id, fingerprint)
+        count = app.goals.record_dispatch(
+            goal_id, fingerprint, delivers_input=_delivers_live_input(tasks)
+        )
         if count >= Config.DISPATCH_REPEAT_LIMIT:
             _short_circuit_repeat(app, logger, goal_id, tasks)
             return
