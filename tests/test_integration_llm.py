@@ -335,3 +335,75 @@ class TestLLMErrorHandling:
         )
         result = llm.ask("test")
         assert_valid_json_response(result)
+
+
+@pytest.mark.integration
+class TestRootHistoryWindow:
+    """The ROOT sliding window must actually be applied (#213).
+
+    _trim_root_history() — which also drives Tier-2 compression of evicted
+    exchanges — used to be reachable only from switch_mode()'s root branch,
+    and switch_mode() early-returns when the mode is unchanged. ROOT never
+    leaves root mode, so the window was never applied and history grew
+    without bound.
+    """
+
+    @staticmethod
+    def _chatty_provider(turns: int):
+        """A provider that answers `turns` asks, plus preload and summaries."""
+        provider = Mock()
+        provider.model = "test"
+
+        def _chat(messages, *args, **kwargs):
+            # The summarizer is called with a system prompt naming it; answer
+            # those with prose and every other call with valid action JSON.
+            system = messages[0].get("content", "") if messages else ""
+            if "summarizer" in system.lower():
+                return "Earlier: the user asked several questions."
+            return json.dumps(mock_llm_response("Conversation", "ok"))
+
+        provider.chat.side_effect = _chat
+        return provider
+
+    def test_history_is_bounded_by_the_window(self):
+        from jarvis.llm import LLM
+        from jarvis.llm.chat import ROOT_HISTORY_WINDOW
+
+        llm = LLM(provider=self._chatty_provider(12), prompts={"root": "test"})
+
+        for i in range(12):
+            llm.ask(f"question {i}")
+
+        # system prompt + at most (window + 1) exchange pairs: the window's
+        # kept pairs plus the in-flight pair appended after the trim.
+        pairs = [m for m in llm.chat_history if m["role"] != "system"]
+        assert len(pairs) <= (ROOT_HISTORY_WINDOW + 1) * 2, (
+            f"root history grew to {len(pairs)} messages — the sliding "
+            f"window of {ROOT_HISTORY_WINDOW} exchanges is not being applied"
+        )
+
+    def test_evicted_exchanges_reach_the_rolling_summary(self):
+        from jarvis.llm import LLM
+
+        llm = LLM(provider=self._chatty_provider(12), prompts={"root": "test"})
+
+        for i in range(12):
+            llm.ask(f"question {i}")
+
+        summary = llm._context_manager.rolling_summary
+        assert summary, (
+            "rolling summary is empty after evicting exchanges — Tier-2 "
+            "compression never ran, so evicted context is lost outright"
+        )
+
+    def test_chat_history_is_not_left_aliasing_the_discarded_list(self):
+        """_trim_root_history rebinds _histories['root']; chat_history must follow."""
+        from jarvis.llm import LLM
+
+        llm = LLM(provider=self._chatty_provider(8), prompts={"root": "test"})
+
+        for i in range(8):
+            llm.ask(f"question {i}")
+
+        assert llm.chat_history is llm._histories["root"]
+        assert llm.chat_history[-1]["role"] == "assistant"

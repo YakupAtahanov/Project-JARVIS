@@ -169,6 +169,16 @@ class LLM:
             _retries_left = self.MAX_JSON_RETRIES
         attempt = self.MAX_JSON_RETRIES - _retries_left + 1
 
+        # ROOT's sliding window is applied here, not only from switch_mode():
+        # that early-returns when the mode is unchanged and ROOT never leaves
+        # root mode, so the trim — and the Tier-2 compression it drives — never
+        # ran, leaving history to grow without bound (#213). _trim_root_history
+        # rebinds _histories["root"], so re-alias chat_history onto the new list
+        # or the append below would land on the discarded one.
+        if self._mode == "root":
+            self._trim_root_history()
+            self.chat_history = self._histories["root"]
+
         self.chat_history.append(
             {
                 "role": "user",
