@@ -86,3 +86,65 @@ class TestConfigDirect:
         assert hasattr(Config, "DISPATCH_BINARY")
         assert isinstance(Config.DISPATCH_TIMEOUT, int)
         assert Config.DISPATCH_TIMEOUT > 0
+
+
+# ----------------------------------------------------------------------
+# Interactive-job prompt guidance (#211)
+# ----------------------------------------------------------------------
+
+
+ROOT_TEMPLATES = (
+    "LLM_ROOT_PROMPT",
+    "LLM_ROOT_PROMPT_UNIFIED",
+    "LLM_ROOT_PROMPT_NO_CONTEXTOR",
+    "LLM_ROOT_PROMPT_UNIFIED_NO_CONTEXTOR",
+)
+
+
+@pytest.mark.config
+class TestInteractiveJobPrompt:
+    """ROOT drives interactive commands through the job model, not around them.
+
+    The #199 rule taught the opposite — send the non-interactive form — which
+    was true only while a shell command's stdin was closed. run_job gives the
+    command a PTY that outlives the call, so the rule now teaches the loop.
+    """
+
+    @pytest.mark.parametrize("name", ROOT_TEMPLATES)
+    def test_non_interactive_rule_is_gone(self, name):
+        from jarvis.config import Config
+
+        prompt = getattr(Config, name)
+
+        assert "--noconfirm" not in prompt
+        assert "non-interactive form" not in prompt
+
+    @pytest.mark.parametrize("name", ROOT_TEMPLATES)
+    def test_job_loop_is_taught(self, name):
+        from jarvis.config import Config
+
+        prompt = getattr(Config, name)
+
+        assert "run_job" in prompt
+        assert "execute_command" in prompt
+        assert '"remind_after" on a run_job task' in prompt
+        assert "send_input" in prompt
+        assert "kill_job" in prompt
+
+    @pytest.mark.parametrize("name", ROOT_TEMPLATES)
+    def test_input_is_never_invented(self, name):
+        from jarvis.config import Config
+
+        prompt = getattr(Config, name)
+
+        assert "EXACTLY what the output asked for" in prompt
+        assert "never guess input the output did not ask for" in prompt
+
+    @pytest.mark.parametrize("name", ROOT_TEMPLATES)
+    def test_credentials_are_the_user_s_call(self, name):
+        from jarvis.config import Config
+
+        prompt = getattr(Config, name)
+
+        assert "NEVER send a password or any other credential" in prompt
+        assert "a password prompt is the user's decision" in prompt

@@ -443,12 +443,15 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     Send the plain command; NEVER prefix "sudo" or "pkexec" — elevation is dmcp's job, not the
     shell's, and "sudo" cannot work here. On a permission / "not root" error, report it; do not
     retry with "sudo".
-  non-interactive — shell commands run with NO keyboard: a command that pauses for input (a
-    "[Y/n]" prompt, a password, a menu) receives end-of-input and aborts. Always use the tool's
-    non-interactive form (e.g. "pacman -Syu --noconfirm", "apt-get -y install X"). Do NOT rely on
-    a confirmation prompt — the user already approved this command before it ran, so a second
-    "[Y/n]" would only ask again at a layer they cannot see. If a command aborts reporting it
-    needed input, re-issue it with the right non-interactive flag.
+  interactive commands — a command that may pause for input (a "[Y/n]", a menu, a wizard) goes to
+    run_job, not execute_command: run_job runs it on a terminal that outlives the call, and YOU
+    choose the "job" name, so you can address the job before the call returns. ALWAYS set
+    "remind_after" on a run_job task — the call blocks for as long as the command waits, so with
+    no reminder nothing ever wakes you to answer it. When a REMIND tail or a status tail shows the
+    command waiting, dispatch send_input (its own task — the run_job call is still blocked) with
+    EXACTLY what the output asked for; never guess input the output did not ask for.
+    NEVER send a password or any other credential: a password prompt is the user's decision, not
+    yours — report it and let them answer. kill_job ends a job that is stuck or no longer wanted.
   timeout & remind_after — estimate how long a command could reasonably take. For anything that may
     run more than a few seconds (system updates, builds, large downloads, long scripts), set a
     generous "params": {{"timeout": <seconds>}} so it isn't cut off at the ~30s default, AND
@@ -671,12 +674,15 @@ dispatch — Execute tool calls. Only after seeing SERVER_DOCS.
     Send the plain command; NEVER prefix "sudo" or "pkexec" — elevation is dmcp's job, not the
     shell's, and "sudo" cannot work here. On a permission / "not root" error, report it; do not
     retry with "sudo".
-  non-interactive — shell commands run with NO keyboard: a command that pauses for input (a
-    "[Y/n]" prompt, a password, a menu) receives end-of-input and aborts. Always use the tool's
-    non-interactive form (e.g. "pacman -Syu --noconfirm", "apt-get -y install X"). Do NOT rely on
-    a confirmation prompt — the user already approved this command before it ran, so a second
-    "[Y/n]" would only ask again at a layer they cannot see. If a command aborts reporting it
-    needed input, re-issue it with the right non-interactive flag.
+  interactive commands — a command that may pause for input (a "[Y/n]", a menu, a wizard) goes to
+    run_job, not execute_command: run_job runs it on a terminal that outlives the call, and YOU
+    choose the "job" name, so you can address the job before the call returns. ALWAYS set
+    "remind_after" on a run_job task — the call blocks for as long as the command waits, so with
+    no reminder nothing ever wakes you to answer it. When a REMIND tail or a status tail shows the
+    command waiting, dispatch send_input (its own task — the run_job call is still blocked) with
+    EXACTLY what the output asked for; never guess input the output did not ask for.
+    NEVER send a password or any other credential: a password prompt is the user's decision, not
+    yours — report it and let them answer. kill_job ends a job that is stuck or no longer wanted.
   timeout & remind_after — estimate how long a command could reasonably take. For anything that may
     run more than a few seconds (system updates, builds, large downloads, long scripts), set a
     generous "params": {{"timeout": <seconds>}} so it isn't cut off at the ~30s default, AND
