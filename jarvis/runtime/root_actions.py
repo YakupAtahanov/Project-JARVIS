@@ -451,6 +451,32 @@ async def _handle_analyze_image(
     await feed_root_summary(app, logger, "VISION_RESULT", result, depth)
 
 
+def _split_task_tails(tasks: list) -> tuple[list, list]:
+    """Lift each running task's live-output tail out of the status rows (#212).
+
+    The rows are rendered through compact_payload_for_llm's character budget;
+    inlining a couple of multi-thousand-character tails there would push the
+    pids and states themselves past the truncation point, so the tail has to be
+    rendered outside that budget to be readable at all.
+
+    The tail keeps dispatch's provenance wrapper verbatim — it is tool-authored
+    output, and unwrapping it here would strip the very marker that tells the
+    model to read it as data.
+    """
+    rows: list = []
+    tails: list = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            rows.append(task)
+            continue
+        tail = task.get("tail")
+        if isinstance(tail, str) and tail:
+            tails.append((task.get("pid"), tail))
+            task = {k: v for k, v in task.items() if k not in ("tail", "tail_hash")}
+        rows.append(task)
+    return rows, tails
+
+
 async def _handle_status(
     app: Any,
     logger: Logger,
@@ -461,7 +487,9 @@ async def _handle_status(
     """Read-only task/goal introspection (#191) — no dispatch, no side effects.
 
     Lets ROOT answer "what's the status?" by actually looking, instead of
-    firing a no-op task just to read the signal window back.
+    firing a no-op task just to read the signal window back. The read carries
+    each running task's live output (#212), so "still running" can be told
+    apart from "still running, and waiting for an answer".
     """
     goal_id = parsed.get("goal_id")
     emit_activity(app, "Checking task status…", kind="dispatch")
@@ -484,7 +512,10 @@ async def _handle_status(
         context += f'\nSTATUS_RESULT (goal [{goal.id}] "{goal.description}"):'
     else:
         context += "\nSTATUS_RESULT (all active tasks):"
-    context += f"\n{compact_payload_for_llm(tasks)}"
+    rows, tails = _split_task_tails(tasks)
+    context += f"\n{compact_payload_for_llm(rows)}"
+    for pid, tail in tails:
+        context += f"\nLIVE_OUTPUT (pid {pid}, newest output so far):\n{tail}"
     if held_output:
         context += f"\nHELD_OUTPUT:\n{held_output}"
     if not tasks:

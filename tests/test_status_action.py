@@ -1,12 +1,18 @@
 """
 Tests for the read-only status affordance (#191): DispatchAdapter.get_task_status /
 get_task_output, and the ROOT "status" action handler in root_actions.py.
+
+Also covers the live-output tail the status read asks for (#212): without it
+"Still running?" can only ever be answered "Yes", never "Yes, and it is waiting
+for you to answer a prompt".
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from jarvis.config import Config
 from jarvis.core.command_parser import TaskParser
 from jarvis.dispatch.adapter import DispatchAdapter
 from jarvis.runtime.root_actions import _handle_status
@@ -53,12 +59,42 @@ class TestAdapterStatusConnected:
         assert tasks == [
             {"pid": 1, "type": "mcp", "server": "s", "tool": "t", "state": "running"}
         ]
-        adapter.session.call_tool.assert_awaited_once_with("status", {})
+        adapter.session.call_tool.assert_awaited_once_with(
+            "status", {"tail": Config.DISPATCH_STATUS_TAIL_CHARS}
+        )
 
     @pytest.mark.asyncio
     async def test_get_task_status_non_json_returns_empty(self):
         adapter = self._connected_adapter("not json")
         assert await adapter.get_task_status() == []
+
+    @pytest.mark.asyncio
+    async def test_get_task_status_requests_the_configured_tail(self, monkeypatch):
+        monkeypatch.setattr(Config, "DISPATCH_STATUS_TAIL_CHARS", 512)
+        adapter = self._connected_adapter("[]")
+        await adapter.get_task_status()
+        adapter.session.call_tool.assert_awaited_once_with("status", {"tail": 512})
+
+    @pytest.mark.asyncio
+    async def test_explicit_zero_tail_sends_the_plain_status_request(self):
+        adapter = self._connected_adapter("[]")
+        await adapter.get_task_status(tail=0)
+        adapter.session.call_tool.assert_awaited_once_with("status", {})
+
+    @pytest.mark.asyncio
+    async def test_tail_bearing_rows_survive_the_content_text_shape(self):
+        """The tail rides in content[0].text like the rest of the status JSON."""
+        rows = [
+            {
+                "pid": 1,
+                "type": "mcp",
+                "state": "running",
+                "tail": "[hash=ab] <ab>Proceed with installation? [Y/n] </ab>",
+                "tail_hash": "ab",
+            }
+        ]
+        adapter = self._connected_adapter(json.dumps(rows))
+        assert await adapter.get_task_status() == rows
 
     @pytest.mark.asyncio
     async def test_get_task_output_returns_text(self):
@@ -129,6 +165,55 @@ class TestStatusActionHandler:
         app.dispatch.get_task_output.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_live_tail_reaches_the_model(self, monkeypatch):
+        prompt = "Proceed with installation? [Y/n] "
+        tasks = [
+            {
+                "pid": 1,
+                "state": "running",
+                "tail": f"[hash=ab] <ab>{prompt}</ab>",
+                "tail_hash": "ab",
+            }
+        ]
+        app = self._make_app(tasks)
+        captured = {}
+
+        async def fake_ask_llm(app, logger, context, tag=None, mode=None):
+            captured["context"] = context
+            return {"action": "respond", "output": "ok"}
+
+        monkeypatch.setattr("jarvis.runtime.root_actions.ask_llm", fake_ask_llm)
+
+        await _handle_status(app, MagicMock(), {"goal_id": None}, 0, 5)
+
+        context = captured["context"]
+        assert "LIVE_OUTPUT (pid 1" in context
+        # Verbatim, provenance wrapper included — the model must read it as data.
+        assert f"[hash=ab] <ab>{prompt}</ab>" in context
+        # ...and lifted out of the row JSON, whose char budget a long tail would
+        # otherwise consume before the pids and states are even printed.
+        rows_line = context.split("STATUS_RESULT (all active tasks):\n")[1].split("\n")[
+            0
+        ]
+        assert "tail_hash" not in rows_line
+        assert '"pid": 1' in rows_line or '"pid":1' in rows_line
+
+    @pytest.mark.asyncio
+    async def test_tailless_tasks_add_no_live_output_block(self, monkeypatch):
+        app = self._make_app([{"pid": 1, "state": "running"}])
+        captured = {}
+
+        async def fake_ask_llm(app, logger, context, tag=None, mode=None):
+            captured["context"] = context
+            return {"action": "respond", "output": "ok"}
+
+        monkeypatch.setattr("jarvis.runtime.root_actions.ask_llm", fake_ask_llm)
+
+        await _handle_status(app, MagicMock(), {"goal_id": None}, 0, 5)
+
+        assert "LIVE_OUTPUT" not in captured["context"]
+
+    @pytest.mark.asyncio
     async def test_status_no_tasks_reports_none(self, monkeypatch):
         app = self._make_app([], held_output="")
         captured = {}
@@ -153,3 +238,23 @@ class TestStatusActionParserRoundTrip:
             "goal_id": "g1",
             "goal_updates": [],
         }
+
+
+@pytest.mark.integration
+class TestStatusPromptBlocks:
+    """A block ROOT is never told about is a block it will not look for."""
+
+    @pytest.mark.parametrize(
+        "name",
+        (
+            "LLM_ROOT_PROMPT",
+            "LLM_ROOT_PROMPT_UNIFIED",
+            "LLM_ROOT_PROMPT_NO_CONTEXTOR",
+            "LLM_ROOT_PROMPT_UNIFIED_NO_CONTEXTOR",
+        ),
+    )
+    def test_live_output_is_documented_beside_held_output(self, name):
+        prompt = getattr(Config, name)
+
+        assert "LIVE_OUTPUT" in prompt
+        assert "HELD_OUTPUT" in prompt

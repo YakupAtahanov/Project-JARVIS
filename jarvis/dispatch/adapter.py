@@ -216,7 +216,7 @@ class DispatchAdapter:
     async def get_signal_window(self) -> List[Dict[str, Any]]:
         return await transport_get_signal_window(self, logger)
 
-    async def get_task_status(self) -> List[Dict[str, Any]]:
+    async def get_task_status(self, tail: Optional[int] = None) -> List[Dict[str, Any]]:
         """Read the live task list via dispatch's 'status' tool (#191).
 
         dispatch's status response has no MCP structuredContent — its JSON
@@ -226,15 +226,27 @@ class DispatchAdapter:
         callers get a plain list of {pid, type, server/tool or label/fires_in,
         state} regardless of whether a future dispatch version starts
         returning structuredContent directly.
+
+        ``tail`` asks dispatch to add, per running task, the newest N
+        characters of its live output as a provenance-wrapped "tail" field
+        (#212). Without it the daemon can report that a task is running but
+        not that it is parked at a prompt. Defaults to
+        Config.DISPATCH_STATUS_TAIL_CHARS; 0 sends no "tail" param at all, so
+        the request stays byte-identical to the pre-#212 one.
         """
         if not require_connection(self, logger, "get_task_status"):
             return []
+
+        chars = Config.DISPATCH_STATUS_TAIL_CHARS if tail is None else tail
+        params: Dict[str, Any] = {}
+        if chars > 0:
+            params["tail"] = int(chars)
 
         result = await transport_call_tool(
             self,
             logger,
             tool_name="status",
-            params={},
+            params=params,
             op_name="get_task_status",
             timeout_error="status timed out after {timeout}s",
             failure_prefix="Failed to get task status",

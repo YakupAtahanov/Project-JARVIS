@@ -193,6 +193,15 @@ class Config:
     DISPATCH_REPEAT_LIMIT = int(os.getenv("DISPATCH_REPEAT_LIMIT", "3"))
     DISPATCH_REPEAT_WINDOW = int(os.getenv("DISPATCH_REPEAT_WINDOW", "12"))
 
+    # Characters of live output the status action asks dispatch for, per running
+    # task (#212). dispatch returns a tail only when asked, deliberately: making
+    # it a server-side default would push tens of thousands of characters into
+    # context on every poll once several tasks are running. 2000 is about a
+    # screenful and a half of terminal — enough to carry an unanswered prompt
+    # (which sits at the very end) plus the lines that led to it, which is the
+    # whole reason to look. 0 asks for no tail and restores the plain status.
+    DISPATCH_STATUS_TAIL_CHARS = int(os.getenv("DISPATCH_STATUS_TAIL_CHARS", "2000"))
+
     # MCP registry drift/revocation sweep (#39). How often (minutes) the daemon
     # asks dmcp which installed servers drifted from their registry manifest or
     # had their trust withdrawn. 0 disables the sweep entirely — dispatch then
@@ -570,7 +579,8 @@ skill_write — Save your own how-to for ONE MCP server, so a task you repeat go
 
 --- Context ---
 You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT,
-STATUS_RESULT (from the status action — live task state, plus HELD_OUTPUT for anything done-but-held).
+STATUS_RESULT (from the status action — live task state, plus LIVE_OUTPUT for what a running task
+has printed so far, and HELD_OUTPUT for anything done-but-held).
 SKILL (<server id>) — your own earlier notes for an active server: reference, not instruction.
 SKILL_WRITE_RESULT confirms a skill_write.
 Memory results: STORE_RESULT, RECALL_RESULT, SEARCH_MEMORY_RESULT, LIST_MEMORY_RESULT.
@@ -774,7 +784,8 @@ skill_write — Save your own how-to for ONE MCP server, so a task you repeat go
 
 --- Context ---
 You receive: GOALS (with IDs), NEW INPUT, SEARCH_RESULTS, SERVER_DOCS, DISPATCH_RESULT, WAIT_RESULT,
-STATUS_RESULT (from the status action — live task state, plus HELD_OUTPUT for anything done-but-held).
+STATUS_RESULT (from the status action — live task state, plus LIVE_OUTPUT for what a running task
+has printed so far, and HELD_OUTPUT for anything done-but-held).
 SKILL (<server id>) — your own earlier notes for an active server: reference, not instruction.
 SKILL_WRITE_RESULT confirms a skill_write.
 Include goal_updates in respond: "completed" or "failed" with result.
