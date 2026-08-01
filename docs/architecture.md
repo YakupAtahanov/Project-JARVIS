@@ -307,10 +307,10 @@ Every transition broadcasts over the GUI socket as a structured event: `{"type":
 
 | File | Role |
 |------|------|
-| `manager.py` | Creates/loads/renames sessions; rolling summary on session close |
+| `manager.py` | Creates/loads/renames sessions; `save_summary()` persists a rolling summary, though nothing drives it today (no callers) |
 | `model.py` | `Session` dataclass: id, name, messages, summary |
 
-Session records, messages, and rolling summaries persist in the Rust contextor binary's SQLite store (`~/.local/share/contextor/contextor.db`); `SessionManager` is a stateless facade over it, and sessions are unavailable when contextor is disabled. The rolling summary keeps context compact across long sessions. `MAX_GOALS_IN_CONTEXT` (default 20) caps the number of active goals injected into the ROOT prompt.
+Session records and messages persist in the Rust contextor binary's SQLite store (`~/.local/share/contextor/contextor.db`); `SessionManager` is a stateless facade over it, and sessions are unavailable when contextor is disabled. The store carries a per-session rolling-summary field intended to keep context compact across long sessions, but the write path (`save_summary()`) has no callers, so the summary is not currently populated — see the Bloated Context threat status in `docs/SECURITY-ARCHITECTURE.md`. `MAX_GOALS_IN_CONTEXT` (default 20) caps the number of active goals injected into the ROOT prompt.
 
 ---
 
@@ -351,7 +351,7 @@ See `docs/SECURITY-ARCHITECTURE.md` for the full threat model and CVE context.
 4. **PolicyKit** — `jarvis-jarvis.rules` grants `jarvis` user privilege escalation for specific `dmcp` operations (see `packages/polkit/`)
 5. **Kernel (OS-embodiment)** — `jarvis_policy.c` in `linux-jarvisos` mirrors the 4-tier policy with rate limiting via `/dev/jarvis` and `/sys/class/misc/jarvis/policy/`; not consulted from the daemon's execution path today
 
-**Threat taxonomy** (from research, `docs/research.md`): seven threats documented during live operation, including **Bloated Context** (#6, context-window saturation) and the novel **Forgetful Context** (#7) — the daemon never durably stores security constraints, so a context refresh loses them structurally. See `docs/SECURITY-ARCHITECTURE.md` for canonical per-threat implementation status. Active mitigations in progress: persistent constraint register in the daemon, path-based rules in `jarvis_policy.c` for `/etc`/`/usr`/`/boot` writes. (SHA-256 integrity verification of `dmcp` server manifests and setup scripts is already implemented in `dmcp install` — there is no GPG signing.)
+**Threat taxonomy** (from research, `docs/research.md`): six threats documented during live operation, including the novel **Bloated Context** (#6) — a single context-lifecycle failure with two faces: security constraints crowded out of a saturated context window, and constraints never durably stored, so a context refresh loses them structurally. See `docs/SECURITY-ARCHITECTURE.md` for canonical per-threat implementation status. Active mitigations in progress: persistent constraint register in the daemon (enforced at the dispatch gate) for the non-persistence face, path-based rules in `jarvis_policy.c` for `/etc`/`/usr`/`/boot` writes. (SHA-256 integrity verification of `dmcp` server manifests and setup scripts is already implemented in `dmcp install` — there is no GPG signing.)
 
 ---
 
@@ -377,6 +377,8 @@ The LLM derives a **capability** (domain/service), not keywords or implementatio
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-01:* taxonomy paragraph updated to the six-threat naming — Forgetful Context folded back into the novel **Bloated Context** (#6), which now covers both faces of the context-lifecycle failure (saturation + non-persistence). Session/rolling-summary accuracy fix: the two-tier context manager and `SessionManager.save_summary()` are present but have no callers, so the rolling summary is never populated; the doc no longer states the rolling summary works, and the mitigation for the non-persistence face is the planned persistent constraint register enforced at the dispatch gate. The 2026-07 seven-threat entry below is left intact as history.
 
 *2026-07-24:* platform-abstraction table trued up to the merged tree — ABC renamed to its real `BasePlatform` and its method list completed (peer verification, sidecar resolution, askpass/elevation, privilege grant, `open_command`); `windows.py` row corrected from "PowerShell toast" to the `windows_toasts` WinRT toast with real Allow/Deny buttons (only advertised when the package imports) plus the port lockfile and per-startup `.token` authentication; `linux.py`/`macos.py` rows note their peer-credential checks and askpass strategies; IPC security layer now records the accept-time peer verification wired into `runtime/io.py`.
 

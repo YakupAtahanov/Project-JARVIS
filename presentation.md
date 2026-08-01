@@ -103,20 +103,26 @@ no cloud, no data leaving the device.
 
 ---
 
-# What We Found: Forgetful Context
+# What We Found: Bloated Context
 
 **The Novel Finding**
 
 We told the AI: "Never modify files in /etc."
 
-Minutes later, it did exactly that. Not because it disobeyed — because it **forgot**.
+Minutes later, it did exactly that. Not because it disobeyed — because the constraint
+**never survived the context's own lifecycle**.
 
-- LLMs have finite context windows
-- As conversation grows, earlier instructions lose weight
-- Security constraints stated at the start of a session get silently dropped
-- The AI doesn't rebel. It simply stops remembering the rules.
+- LLMs have finite context windows. As a conversation grows, a rule stated at the
+  start gets **crowded out** — earlier instructions lose weight and drop off.
+- And nothing durably stores the rule outside that window, so the moment the context
+  is refreshed, the constraint is **lost outright** — structurally, not by accident.
 
-**This finding has no prior literature. We discovered it through direct operation.**
+Two faces, one failure: a context that does not carry security constraints through
+its own lifecycle. The AI doesn't rebel. It simply no longer holds the rule.
+
+**This finding has no prior literature. We discovered it through direct operation** —
+the first identification of context-lifecycle failure as a *security* threat, not a
+reliability quirk.
 
 Traditional security assumes the agent remembers its constraints.
 LLMs do not.

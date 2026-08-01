@@ -41,7 +41,7 @@ The system is built on a modular nine-script build pipeline that transforms a ba
 
 ### The Threat Taxonomy
 
-Through designing, building, and operating JarvisOS, we empirically identified seven security threats that emerge when LLMs are granted elevated system privileges:
+Through designing, building, and operating JarvisOS, we empirically identified six security threats that emerge when LLMs are granted elevated system privileges:
 
 | Threat | Escalation Stage | Primary Mitigation |
 |--------|-----------------|-------------------|
@@ -50,10 +50,9 @@ Through designing, building, and operating JarvisOS, we empirically identified s
 | Misleading MCP Server Usage | User / Sudo / Web | Registry vetting + structured tool schema |
 | Unauthorized Sudo Requests via MCP | Sudo / Web | TLA system + PolicyKit enforcement |
 | Sudo Capability Exploitation | Sudo / Web | TLA confirmation gate |
-| Bloated Context | User / Sudo / Web | dispatch rolling window + contextor pruning |
-| Forgetful Context | User / Sudo / Web | Not yet mitigated — persistent constraint register planned |
+| Bloated Context (novel) | User / Sudo / Web | Partial — dispatch rolling window + contextor pruning bound saturation; persistent constraint register planned for non-persistence |
 
-Each threat was observed through direct system operation. **Bloated Context** and **Forgetful Context** are distinct, adjacent threats: Bloated Context is security constraints getting crowded out of a saturated context window; Forgetful Context is the agent never durably storing a constraint in the first place, so a context refresh loses it structurally rather than incidentally. No prior literature identifies the latter as a discrete security threat.
+Each threat was observed through direct system operation. **Bloated Context** is a single context-lifecycle failure with two faces: security constraints getting crowded out of a saturated context window, and the agent never durably storing a constraint in the first place, so a context refresh loses it structurally rather than incidentally. Both faces are the same defect — a context that does not carry security constraints through its own lifecycle — and in JarvisOS both trace to one unreachable code path (the daemon's two-tier context manager never runs; a single config flag, `RESET_HISTORY_AFTER_RESPONSE`, decides which face appears). No prior literature identifies context-lifecycle failure — saturation or non-persistence — as a discrete security threat rather than a reliability quirk.
 
 ---
 
@@ -69,7 +68,7 @@ A four-tier threat classification (Safe, Elevated, Dangerous, Forbidden) shared 
 Modeled on the Arch Linux User Repository proofread model. Third-party MCP servers must pass community review — covering code, declared capabilities, and tool description accuracy — before being listed. Malicious or deceptive servers are filtered before they are ever discoverable by the tool search engine.
 
 **Bloated Context Mitigation**
-dispatch's bounded rolling signal window presents only the last twenty signal entries at each LLM wakeup, keeping context size predictable regardless of how many tasks have run. contextor complements this with retention-based pruning of stale conversation history, while the daemon's context manager preserves the system prompt — including its security constraints — and a rolling summary across every context refresh. Durable, per-constraint preservation is the unmitigated core of Forgetful Context (threat #7).
+dispatch's bounded rolling signal window presents only the last twenty signal entries at each LLM wakeup, keeping context size predictable regardless of how many tasks have run. contextor complements this with retention-based pruning of stale conversation history. Together these bound the *saturation* face of the threat. The daemon does carry a two-tier context manager (a hot window plus a rolling summary intended to preserve the system prompt and its security constraints across every context refresh), but that path is presently unreachable — the trim-and-summarize routine only fires on a mode switch that never occurs, so the rolling summary stays empty and constraints are not durably carried forward. The *non-persistence* face therefore remains unmitigated; the planned fix is a persistent constraint register in the daemon, enforced at the dispatch gate.
 
 ---
 
@@ -93,7 +92,7 @@ We evaluated threats across three escalation stages:
 
 This research makes four concrete contributions:
 
-1. A taxonomy of seven empirically-identified security threats specific to privilege-escalated LLM agents — including Bloated Context (the first identification of context-window saturation as a discrete security threat rather than a reliability problem) and Forgetful Context (the first identification of the absence of persistent security constraints as a discrete security threat).
+1. A taxonomy of six empirically-identified security threats specific to privilege-escalated LLM agents — including Bloated Context, the first identification of context-lifecycle failure as a discrete security threat rather than a reliability problem: both the saturation face (security constraints crowded out of a full context window) and the non-persistence face (constraints never durably stored, so a context refresh loses them structurally).
 2. Architectural mitigations for each threat class, implemented and verified against source code in the JarvisOS platform.
 3. JarvisOS itself — a fully functional, bootable, open-source AI-native OS released as a research and development platform for the community.
 4. A documented MCP tool-description architecture, independently developed in October–November 2025, predating its appearance in commercial deployments.
@@ -102,7 +101,7 @@ This research makes four concrete contributions:
 
 ### Future Work
 
-- **Empirical evaluation** — quantitative attack reproduction results measuring attack success rates, detection rates, and mitigation effectiveness under controlled conditions across the full seven-threat taxonomy.
+- **Empirical evaluation** — quantitative attack reproduction results measuring attack success rates, detection rates, and mitigation effectiveness under controlled conditions across the full six-threat taxonomy.
 - **Fine-tuning** — a LoRA/QLoRA fine-tune of Llama 3.1 8B using the NVIDIA NeMo Framework on the provenance-nonce labeled dataset generated by dispatch, with the resulting model and dataset released publicly on HuggingFace.
 - **Platform expansion** — evolving JarvisOS from a research testbed into a general-purpose OS accessible to cybersecurity researchers, developers, and everyday users.
 - **Community registry** — a public MCP registry infrastructure allowing third-party developers to submit and vet servers under the proofread model described in this research.
@@ -131,5 +130,7 @@ The full platform is open-source under a dual-license model (AGPLv3 for communit
 ---
 
 ### Changelog — corrected claims
+
+*2026-08-01:* taxonomy merged back to six threats — Forgetful Context folded into Bloated Context, which keeps the novelty claim and now covers both faces of the context-lifecycle failure (constraints crowded out of a saturated window, and constraints never durably stored so a context refresh loses them). The two were one failure with one dead code path behind them: the daemon's two-tier context manager never runs, so `RESET_HISTORY_AFTER_RESPONSE` alone decides which face appears. Bloated Context Mitigation corrected to stop claiming the two-tier context manager preserves constraints across refreshes — that path is unreachable — and to state the non-persistence face is open, with a persistent constraint register enforced at the dispatch gate as the planned fix. The 2026-07 split entry below is left intact as history.
 
 *2026-07-22:* taxonomy updated to seven threats — Forgetful Context split from Bloated Context (2026-07) as the unmitigated novel finding; boundary protocol corrected to the current 128-bit CSPRNG nonce with daemon-side verification (the six-character Splitmix64 scheme and out-of-band-by-default description were the old design); TLA corrected to the four-tier Safe/Elevated/Dangerous/Forbidden classification (no Guest→Kernel levels, no goal-scoped sudo expiry — sudo is an explicit toggled grant with per-escalation password); Bloated Context mitigation no longer claims a contextor constraint-priority mechanism that does not exist; license corrected to AGPLv3 + SCCL; Rust package count and build-pipeline script count corrected.

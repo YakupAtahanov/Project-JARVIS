@@ -11,15 +11,19 @@ AI agent to trigger a major public security incident (early 2026).
 
 ---
 
-## Seven-Threat Taxonomy — Implementation Status
+## Six-Threat Taxonomy — Implementation Status
 
 **This table is the canonical status of each research threat's mitigation.**
 Where the website or the paper states a mitigation in the present tense, it must
 match the status here. `implemented` = enforced in code; `partial` = present but
 with a stated gap; `proposed` = designed, not built; `OS-side` = owned by the
 OS embodiment, not the core. (Bloated Context and Forgetful Context were split
-into distinct threats in 2026-07: Bloated = constraints crowded out of a full
-window; Forgetful = constraints never durably stored in the first place.)
+into distinct threats in 2026-07, then merged back in 2026-08: Bloated Context
+now covers the whole context-lifecycle failure — constraints crowded out of a
+full window *and* constraints never durably stored, so a context refresh loses
+them structurally rather than incidentally. It carries the novelty claim. The
+two were one failure all along: a single dead code path produces both faces —
+see the changelog below.)
 
 | # | Threat | Enforcement point | Status |
 |---|--------|-------------------|--------|
@@ -28,8 +32,7 @@ window; Forgetful = constraints never durably stored in the first place.)
 | 3 | Misleading MCP Server Usage | official-tier review of tool descriptions + structured schema | **partial** |
 | 4 | Unauthorized Sudo via MCP | userspace Threat-Level-Access confirmation gate with host-floor classification (`jarvis/core/threat_level.py`) | **implemented** — command-execution tools and dangerous payloads are force-confirmed regardless of manifest flags (#159/#162 closed) |
 | 5 | Sudo Capability Exploitation | same confirmation gate | **implemented** |
-| 6 | Bloated Context | daemon two-tier context + dispatch rolling window + contextor pruning | **partial** |
-| 7 | Forgetful Context (novel) | — | **not yet mitigated** — no persistent constraint register in the daemon; highest-priority open item |
+| 6 | Bloated Context (novel) | dispatch rolling window + contextor pruning bound the saturation face; a persistent constraint register in the daemon, enforced at the dispatch gate, is planned for the non-persistence face (#214). The daemon's two-tier context manager (hot window + rolling summary) is present in `jarvis/llm/` but its trim/summary path is unreachable, so it does not currently run — see the changelog | **partial** — saturation bounded (rolling window + pruning), non-persistence open; the highest-priority open item |
 | — | Kernel 4-tier policy engine (`/dev/jarvis`) | linux-jarvisos + daemon `KernelClient` | **OS-side** — not consulted from the daemon today |
 
 ### On the "TLA" acronym (important for the paper)
@@ -300,6 +303,8 @@ vulnerabilities.
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-01:* taxonomy merged back to **six** threats — Forgetful Context (the 2026-07 split-out) folded back into Bloated Context, which keeps its name, carries the "(novel)" marker, and now covers **both faces** of the context-lifecycle failure: constraints crowded out of a saturated window, and constraints never durably stored so a context refresh loses them structurally. They were one failure the whole time. A single dead code path produces both presentations: the daemon's two-tier context manager (hot window + rolling summary) never executes — `_trim_root_history()` (which drives `compress_evicted()`) is reachable only from `switch_mode("root")`, and `switch_mode()` early-returns when the mode is unchanged; the LLM never leaves root mode because the only switch-away lives in `_run_dispatch_subchain_legacy`, which has zero callers, so `_rolling_summary` stays empty and `SessionManager.save_summary()` (also zero callers) never fires. With that path dead, one config flag decides which face you see: `RESET_HISTORY_AFTER_RESPONSE=false` (default) grows history unbounded (constraints crowded out — the "bloated" face); set it true and history is cleared while the summary that should carry constraints forward is empty (constraints lost — the "forgetful" face). Accuracy fix in the same pass: Threat 6's enforcement no longer claims the "daemon two-tier context" mitigates it (that path does not run), the status now reads "partial — saturation bounded, non-persistence open," and the planned mitigation is a persistent constraint register in the daemon enforced at the dispatch gate (#214). The novelty claim — first identification of context-lifecycle failure, both saturation and non-persistence, as a security threat rather than a reliability quirk — is preserved on Threat 6. The 2026-07 split entries below are left intact as history.
 
 *2026-07-24:* the "no TCP port listener" property now carries an explicit conditional exception — `jarvis/server/openai_compat.py` adds an **opt-in** OpenAI-compatible TCP listener (`JARVIS_OPENAI_SERVER_ENABLED`, default `false`), so the unconditional claim holds only in the default configuration. Enabling it is gated by loopback-only binding unless `JARVIS_OPENAI_SERVER_ALLOW_NONLOCAL` is separately set, a mandatory per-request bearer token (`0600`, no anonymous mode), and inference-only scope — no ROOT/DISPATCH, no MCP tool calls, no TLA gate. The seven-threat taxonomy and the Threat 2/4/5 status corrections below are unchanged.
 

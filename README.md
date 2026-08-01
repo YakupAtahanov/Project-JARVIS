@@ -25,8 +25,9 @@ and verify. Following the model established by the Free Software Foundation,
 Project JARVIS is built as community-owned infrastructure, not a product.
 
 During development, we identified security threats that the industry is only
-now beginning to recognize — including novel phenomena like "forgetful context,"
-where LLMs silently drop security constraints mid-session. These findings
+now beginning to recognize — including the novel "bloated context," where LLMs
+silently drop security constraints across the context lifecycle, whether crowded
+out of a saturated window or never durably stored across a refresh. These findings
 informed both the system's architecture and an ongoing academic research effort
 at Washington State University.
 
@@ -426,7 +427,7 @@ Project JARVIS is also a security research platform, built to study what happens
 
 **TLA (Threat Level Access)** is the core enforcement mechanism: a userspace, non-blocking, human-in-the-loop confirmation gate (`jarvis/core/confirmation_manager.py`, `jarvis/runtime/dispatch_flow.py`) that requires explicit out-of-band user approval before privileged tool calls execute. The LLM is deliberately kept out of the confirmation loop so it cannot misrepresent an action.
 
-Seven threats identified through live operation, and their current status:
+Six threats identified through live operation, and their current status:
 
 | Threat | Status |
 |---|---|
@@ -435,10 +436,9 @@ Seven threats identified through live operation, and their current status:
 | Misleading MCP server usage | partial — official-tier review of tool descriptions + structured schema |
 | Unauthorized sudo via MCP | implemented — the host floor in `jarvis/core/threat_level.py` rates command-execution tools (`run_command`, `exec`, `shell`, …) at least DANGEROUS regardless of what a manifest declares, so a shell server cannot under-declare its own threat level (#159/#162) |
 | Sudo capability exploitation | implemented — same author-proof host floor, plus a dangerous-payload scan of tool params (`sudo`, `rm -rf`, `dd if=`, pipe-to-shell, …); TLA confirmation is goal-scoped |
-| Bloated context | partial — dispatch rolling window + contextor pruning |
-| Forgetful context (novel) | not yet mitigated — no persistent constraint register in the daemon |
+| Bloated context (novel) | partial — dispatch rolling window + contextor pruning bound the saturation face; non-persistence face open, persistent constraint register at the dispatch gate planned |
 
-**Forgetful context** — the daemon never durably stores security constraints, so a context refresh loses them structurally rather than incidentally — is the standout novel finding (split from Bloated Context in 2026-07) and the highest-priority open item. Full taxonomy and academic writeup: `docs/research.md`.
+**Bloated context** is the standout novel finding: a single context-lifecycle failure with two faces — security constraints crowded out of a saturated context window, and constraints never durably stored so a context refresh loses them structurally rather than incidentally. Both trace to one unreachable code path in the daemon (the two-tier context manager never runs), and the non-persistence face is the highest-priority open item, with a persistent constraint register in the daemon (enforced at the dispatch gate) as the planned mitigation. (Forgetful Context was split out in 2026-07 and merged back here in 2026-08.) Full taxonomy and academic writeup: `docs/research.md`.
 
 **JARVIS OS** (the Linux distribution built on this system) adds a kernel-level 4-tier policy engine (`/dev/jarvis`, SAFE/ELEVATED/DANGEROUS/FORBIDDEN) as a separate OS-embodiment layer — it is not yet consulted from this daemon's execution path.
 
@@ -481,6 +481,8 @@ When opening PRs or issues, use the repository templates for faster triage and r
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-01:* taxonomy merged back to **six** threats — Forgetful Context folded back into the novel Bloated Context, which now covers both faces of the context-lifecycle failure (constraints crowded out of a saturated window, and constraints never durably stored so a refresh loses them). The two are one failure with one dead code path behind them: the daemon's two-tier context manager never runs, so a single config flag (`RESET_HISTORY_AFTER_RESPONSE`) decides which face appears. Threat-table row and the intro reworded off "forgetful context" onto the merged Bloated Context, with the non-persistence face marked as the highest-priority open item and a persistent constraint register (enforced at the dispatch gate) as the planned mitigation. The 2026-07-22 seven-threat entry below is left intact as history.
 
 *2026-07-27:* voice section now names both STT engines (#138) — Vosk stays the default and the only wake-word engine; faster-whisper is an opt-in `voice-whisper` extra for utterance transcription, excluded from `voice` and `all`. Its accuracy/latency on real hardware is unverified: no audio device or model was available where it was implemented.
 
