@@ -510,6 +510,53 @@ def _show_providers_usage() -> None:
     print("  jarvis providers edit <name> --model <model>      # Update a field")
 
 
+def _cmd_constraints() -> None:
+    """List active standing constraints."""
+    from .core.constraint_store import load_constraints
+
+    records = load_constraints()
+    active = [r for r in records if r.get("active", True)]
+    if not active:
+        print("No standing constraints.")
+        return
+    print(f"Standing constraints ({len(active)}):")
+    for c in active:
+        print(f"  #{c['id']}  {c['text']}")
+        print(f"          pattern: {c['pattern']}")
+        print(f"          added:   {c['created_at'][:19]}  source: {c.get('source', '?')}")
+
+
+def _cmd_constrain() -> None:
+    """Add a path-prefix deny constraint: jarvis constrain <path> [description]."""
+    if len(sys.argv) < 3:
+        print("Usage: jarvis constrain <path> [description]")
+        print('Example: jarvis constrain /home/user/photos "never touch my photos"')
+        sys.exit(1)
+    path_arg = sys.argv[2]
+    text = " ".join(sys.argv[3:]) if len(sys.argv) > 3 else f"deny access to {path_arg}"
+    from .core.constraint_store import add_constraint
+
+    record = add_constraint(text=text, pattern=path_arg, source="cli")
+    print(f"Constraint #{record['id']} added: {text!r}")
+    print(f"  Blocks any dispatch touching paths under: {record['pattern']}")
+
+
+def _cmd_unconstrain() -> None:
+    """Remove a constraint by id: jarvis unconstrain <id>."""
+    if len(sys.argv) < 3:
+        print("Usage: jarvis unconstrain <id>")
+        print("  (get ids from: jarvis constraints)")
+        sys.exit(1)
+    constraint_id = sys.argv[2]
+    from .core.constraint_store import remove_constraint
+
+    if remove_constraint(constraint_id):
+        print(f"Constraint #{constraint_id} removed.")
+    else:
+        print(f"Error: No constraint with id '{constraint_id}'.")
+        sys.exit(1)
+
+
 def show_usage() -> None:
     """Display usage information."""
     print("JARVIS AI Assistant - CLI Interface")
@@ -528,6 +575,13 @@ def show_usage() -> None:
     print("  jarvis sudo enable        # Enable sudo access (requires root)")
     print("  jarvis sudo disable       # Disable sudo access (requires root)")
     print("  jarvis sudo               # Show current sudo access status")
+    print()
+    print("Pending Confirmations:")
+    print()
+    print("Standing Constraints:")
+    print('  jarvis constrain <path> [desc]     # Add path-prefix deny constraint')
+    print("  jarvis unconstrain <id>             # Remove constraint by id")
+    print("  jarvis constraints                  # List active constraints")
     print()
     print("Pending Confirmations:")
     print("  jarvis confirmations               # List pending confirmations")
@@ -717,6 +771,15 @@ def main() -> None:
         else:
             print("Usage: jarvis auto-pull [on|off]")
             sys.exit(1)
+
+    elif command == "constraints":
+        _cmd_constraints()
+
+    elif command == "constrain":
+        _cmd_constrain()
+
+    elif command == "unconstrain":
+        _cmd_unconstrain()
 
     elif command in ["-h", "--help", "help"]:
         show_usage()
