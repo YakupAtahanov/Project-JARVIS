@@ -75,9 +75,6 @@ class ContextManager:
         # Tier 2: Rolling summary of evicted conversations
         self._rolling_summary: str = ""
 
-        # Full exchange history (before trimming) for summarization
-        self._all_exchanges: List[Dict[str, str]] = []
-
         logger.info(f"ContextManager: hot_window={hot_window}")
 
     @property
@@ -198,10 +195,8 @@ class ContextManager:
     def reset(self) -> None:
         """Reset all tiers — full clean slate."""
         self._rolling_summary = ""
-        self._all_exchanges.clear()
         logger.debug("ContextManager: Full reset")
 
     def soft_reset(self) -> None:
         """Reset hot window but keep warm summary."""
-        self._all_exchanges.clear()
         logger.debug("ContextManager: Soft reset (kept summary)")

@@ -169,6 +169,9 @@ class LLM:
             _retries_left = self.MAX_JSON_RETRIES
         attempt = self.MAX_JSON_RETRIES - _retries_left + 1
 
+        if self._mode == "root" and _retries_left == self.MAX_JSON_RETRIES:
+            self._trim_root_history()
+
         self.chat_history.append(
             {
                 "role": "user",
@@ -396,14 +399,6 @@ class LLM:
             # Soft reset: clear hot window but keep the rolling summary
             self._context_manager.soft_reset()
 
-        self._histories[self._mode] = [
-            {"role": "system", "content": self._prompts[self._mode]},
-        ]
-        self.chat_history = self._histories[self._mode]
-
-    def full_reset(self):
-        """Hard reset: clear all tiers including rolling summary."""
-        self._context_manager.reset()
         self._histories[self._mode] = [
             {"role": "system", "content": self._prompts[self._mode]},
         ]
