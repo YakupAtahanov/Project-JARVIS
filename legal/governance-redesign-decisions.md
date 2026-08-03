@@ -146,23 +146,39 @@ scaling schedule for board growth (how seats are added per stage).
 
 ---
 
-**B-Q3. Board removal/replacement = "B+C hybrid."** Replaces the broken B.3.3 Continuous
-Confidence Vote.
+**B-Q3. Board removal = auto-elimination via the health bar.** Replaces the broken B.3.3
+Continuous Confidence Vote. **(REVISED — supersedes the earlier "B+C hybrid" where a health-bar
+*signal* triggered a discrete recall *vote*. The health bar now eliminates DIRECTLY; the
+separate vote, its turnout quorum, and the old anti-harassment "Cooldown B" are all gone.
+Adopted at the founder's request for simplicity + always-on accountability; made safe by the
+whole-Pool anchor below.)**
 
 **Guiding principle (founder's framing):** a board member can never predict when their time
-is up; the only way to extend it is to keep serving the community's needs, rules, and
-conduct. Accountability through uncertainty. Silence protects a member doing well; a turned
-community can act.
+is up; the only way to extend it is to keep serving the community's needs, rules, and conduct.
+Accountability through uncertainty. Silence protects a member doing well (silence = keep).
 
-**Mechanism:**
-- **Always-open confidence *signal* (the "health bar," from C)** — a live, publicly visible
-  keep/replace tally per board member. **Transparency and trigger only — it has no automatic
-  removal power.**
-- **When the signal crosses a trigger threshold, it auto-opens a formal, bounded recall vote
-  (B).** The recall may also be opened by petition (10–15% of the Pool).
-- **Recall vote:** bounded 14-day window, two choices only (**Keep vs. Remove** — no
-  "neutral," to avoid the participation paradox). Removal requires **⅔ of ballots cast AND a
-  turnout quorum of ~⅓ of the Pool** (an *absolute* floor, so a ~5% bloc can never meet it).
+**Mechanism — direct auto-elimination:**
+- Each Pool member may hold a **"replace"** position on any board member (default = no
+  position = keep); positions are changeable anytime; the live tally is public.
+- A board member is **auto-eliminated** when "replace" positions reach **≥ threshold% of the
+  current Pool snapshot**, held continuously for a **sustain window of N days**.
+- **The non-negotiable anchor — absolute fraction of the WHOLE Pool, not of turnout.** Passive
+  members count as keep, so removal requires a genuine broad slice of the entire ~1,000-member
+  governance body; a small low-turnout bloc cannot do it. This is exactly what makes direct
+  auto-elimination safe rather than the original capture bug. It also dissolves the old
+  auto-seed ambiguity (count replace against the whole-Pool denominator; not-voting = keep —
+  no ratios, no quorum-of-turnout).
+- **Sustain window (N days)** defeats a momentary coordinated spike.
+- **Two-bar decrement (repeat-offender escalation — founder's design):** the elimination
+  threshold starts at a **high bar** for a first-term member and **steps down** toward a
+  **low-bar floor** with each removal-and-return — the community's repeated "we want this
+  person out" makes them progressively easier to remove.
+  - Tied to **involuntary removals only** (not clean resignation or founder-seat conversion).
+  - **Decays over a rolling window** (no permanent marks — consistent with the Integrity
+    Multiplier philosophy).
+  - **Floor stays strictly ABOVE the 20% employer cap**, so no single employer can ever
+    eliminate a member alone — even a many-times-removed one (closes the "employer drives a
+    rival's champion down to self-removability" attack).
 - **Replacement is automatic, from an opt-in candidate pool (refined in B-Q6).** Candidacy is
   opt-in — the system maintains a standing pool of volunteers. On a vacancy the seat auto-fills
   with the **highest-merit (C-points) opt-in candidate**, respecting the employer-diversity cap
@@ -173,17 +189,43 @@ community can act.
     C-points, pay, and Pool membership — they simply aren't in the candidate pool (and get
     their earned time off). Leadership is an earned rotation one *accepts*, never a draft;
     availability to serve is a personal choice, never a merit judgment (mirrors B-Q3a).
-- **Rate-limit:** a failed recall bars another against the same member for a cooldown
-  (e.g., 6–12 months).
+- **Cooldowns after the pivot:** *Cooldown A* (post-removal re-entry, B-Q3b) is **kept**;
+  *Cooldown B* (the old anti-harassment recall-reattempt cooldown) is **removed** — there is
+  no failing vote to re-launch. Repeat-offender escalation now lives in the health-bar
+  **decrement** above, not in cooldown length.
+- **Honest trade-off (logged):** direct auto-elimination is *less responsive* than a bounded
+  vote for a *first-term* bad member (it needs sustained active "replace" positions, vs.
+  mobilizing a voting window). The decrement mitigates this for repeat offenders; accepted for
+  the simplicity + always-on-accountability gain.
 
-**Bugs this fixes:** kills the auto-seed "cast votes" ambiguity (silence = keep, replace
-measured against an absolute base); raises the minimum capture bloc from **~5% to ~⅓ of the
-Pool** (and, with the 20% Employer Concentration Limit, forces cross-employer coordination);
-separates removal from replacement.
+**B-Q3b. Post-removal re-eligibility cooldown (distinct clock).** A *removed* member is pulled
+from the opt-in candidate pool for a cooldown before they can be re-assigned. **Necessary,
+not optional:** removal does not touch C-points, so without a cooldown the removed member —
+still the highest-merit opt-in candidate — would auto-fill the very vacancy their removal
+created, making removal a revolving door.
+- **Governance timeout only** — the cooldown never touches C-points, pay, or Pool membership
+  (consistent with B-Q3a and opt-out-no-penalty). A removed member remains a full contributor
+  who earns and votes; they simply cannot *govern* during the cooldown.
+- **Two edge cases:** (a) **repeat-offender escalation now lives in the health-bar decrement**
+  (B-Q3), not in cooldown length — so **Cooldown A can stay flat (~3 months, founder-proposed)**;
+  (b) **resigning to dodge an active/imminent removal counts as removal** (else a member resigns
+  "cleanly" and re-qualifies immediately).
+- **Board-member lifecycle:** opt in → assigned (highest-merit opt-in candidate, fresh health
+  bar) → serve (health-bar accountable) → removed/resign/convert → cooldown → return-eligible.
+- Cooldown A length (~3 months) is a tuning-pass number.
+
+**Bugs this fixes:** kills the auto-seed "cast votes" ambiguity (silence = keep; replace
+measured against the whole-Pool snapshot); raises the minimum capture bloc from **~5% to a
+broad absolute fraction of the Pool** (and, with the 20% Employer Concentration Limit and the
+above-cap floor, forces cross-employer coordination at every threshold level).
 
 **Shared fixes (apply regardless):** measure all thresholds against the **Pool snapshot**
 (top-N by C-points, which already excludes trivial-merge gaming) rather than raw "Active
-Contributors," and fix the snapshot date so the denominator can't be inflated mid-vote.
+Contributors," and fix the snapshot date (B-Q6a) so the denominator can't be inflated mid-run.
+
+**Thresholds to derive (tuning pass, founder-flagged):** with a fixed ~1,000-member Pool, the
+high bar, the low-bar floor (must be > 20%), the per-removal decrement step, the decay window,
+and N (sustain days) can all be derived from that figure — "we would need to think about it."
 
 *Note:* this mechanism governs the founders' converted (ordinary) seats too — capture-
 resistant but still responsive, protecting founders and community alike.
@@ -374,8 +416,9 @@ vs. third-party attestation vs. tax-identity reuse); confirm tax-retention figur
 
 - [x] **Q2 — Founder → community handoff.** *Settled (see B-Q2).* Two micro-choices left open:
       the N-year cap value and the board-growth schedule.
-- [x] **Q3 — Board removal/replacement math.** *Settled (see B-Q3): B+C hybrid.* Board comp
-      stays off the C-points rail (B-Q3a) — recommended, pending founder confirm.
+- [x] **Q3 — Board removal/replacement math.** *Settled (see B-Q3): DIRECT auto-elimination via
+      the health bar (whole-Pool absolute threshold + sustain window + two-bar decrement),
+      revised from the earlier B+C-vote model.* Board comp stays off the C-points rail (B-Q3a).
 - [x] **Q4 — Stage-4 activation trigger.** *Settled (see B-Q4): staffing-as-trigger,
       health-metered, irreversible.* Micro-choices (N months, turnout floor, delay-veto) open.
 - [x] **Q5 — Safe path to Stage 4.** *Settled (see B-Q5): incubation model, two-axis maturity
@@ -383,6 +426,38 @@ vs. third-party attestation vs. tax-identity reuse); confirm tax-retention figur
       from licensees.* Micro-choices (diversity-gate scope, thresholds, machine checklist) open.
 - [x] **Q6 — Electoral integrity.** *Settled (see B-Q6): snapshot rule, Pool-only petitions,
       independent audit, anti-spam, proportionate opt-in identity.* Values open for end tuning.
+
+---
+
+## Session handoff — current status & what's next
+
+**Where we are.** The governance redesign (Q1–Q6) is fully designed and internally consistent,
+captured above. The pricing model (A1–A7) is settled. This log is the authoritative spec; the
+operative documents (SCCL-v1.md, organization-charter.md, cla.md, c-points.md) have NOT yet
+been rewritten to match it.
+
+**Open — numbers (deferred to one end-of-pass tuning round):**
+- Founder-seat hard-year cap N (B-Q2, proposed ~10); board-growth schedule per stage.
+- Board-removal thresholds (B-Q3): high bar, low-bar floor (> 20%), decrement step, decay
+  window, sustain days N — all to be *derived from the fixed ~1,000-member Pool* (founder's
+  next thinking task).
+- Cooldown A length (~3 months); Cooldown B suggestion is now moot (removed in the B-Q3 pivot).
+- Stage-maturity thresholds (B-Q5): sustain windows, %/headcount, per-organ machine checklist.
+- Electoral-integrity values (B-Q6): cooldown/rate-limit numbers, uniqueness-token method.
+
+**Open — big items NOT yet touched (these gate whether the governance can legally exist):**
+1. **Inbound rights chain** — the Foundation cannot currently relicense community code (DCO +
+   AGPLv3 only). Needs a universal FLA/ICLA-style inbound grant + B.2.4 rewrite + retroactive
+   consent sweep. (See the pre-counsel review report for detail.)
+2. **Entity form** — 501(c)(3) is likely the wrong vehicle for selling licenses + distributing
+   most revenue to contributors; evaluate 501(c)(6) / alternatives with counsel; statutory
+   membership structure to make Stage-4 community power lawful.
+3. **Redraft the operative documents** from this log (the big lift), plus the mechanical
+   cleanups from the review (stale root SCCL copy, CLA name error, cross-reference fixes).
+
+**Suggested next step:** tackle the two foundation problems (1 & 2) — beautiful governance on an
+un-relicensable codebase or the wrong entity is a house on sand — then redraft. Or run the
+number-tuning round first if you'd rather lock the mechanics.
 
 ---
 
