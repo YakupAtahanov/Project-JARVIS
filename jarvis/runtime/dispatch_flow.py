@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import uuid
@@ -531,6 +532,36 @@ async def _stamp_stateful_tasks(
             )
 
 
+def _check_constraints(tasks: list[dict[str, Any]]) -> str:
+    """Return a refusal string if any task param matches a standing constraint, else ''.
+
+    Path matching is deliberate narrow scope: absolute paths and ~/… only.
+    Paths buried in shell one-liners, relative paths, and symlinks are not caught —
+    the role-level permission and TLA gate are the backstop for those cases (#214).
+    """
+    from ..core.constraint_store import active_constraints
+    from ..core.threat_level import _iter_strings
+
+    constraints = active_constraints()
+    if not constraints:
+        return ""
+    for task in tasks:
+        params = task.get("params") or {}
+        for s in _iter_strings(params):
+            s = s.strip()
+            if not s.startswith("/") and not s.startswith("~"):
+                continue
+            try:
+                norm = os.path.abspath(os.path.expanduser(s))
+            except Exception:
+                continue
+            for c in constraints:
+                pat = c.get("pattern", "")
+                if pat and (norm == pat or norm.startswith(pat.rstrip("/") + "/")):
+                    return f'Path "{norm}" matches constraint #{c["id"]}: {c["text"]!r}'
+    return ""
+
+
 def _revoked_servers(app: Any, tasks: list[dict[str, Any]]) -> list[str]:
     """Servers in this batch the registry sweep marked revoked (#39).
 
@@ -610,6 +641,26 @@ async def dispatch_send(
                 if len(parts) >= 2:
                     params["command"] = parts[0]
                     params["args"] = parts[1:]
+
+    # Standing constraints — path-prefix deny rules from constraints.json (#214).
+    # Checked before revocation and before the confirmation gate so allow_all
+    # cannot bypass them. The whole batch is refused on any match.
+    constraint_violation = _check_constraints(tasks)
+    if constraint_violation:
+        logger.warning(
+            f"JARVIS: Dispatch blocked by standing constraint: {constraint_violation}"
+        )
+        emit_activity(
+            app, f"Blocked by constraint: {constraint_violation}", kind="dispatch"
+        )
+        return {
+            "error": (
+                f"Dispatch refused: a standing constraint blocks this action. "
+                f"{constraint_violation} "
+                "The constraint was set by the user and cannot be overridden here. "
+                "Tell the user what was blocked and why, then ask what they want to do instead."
+            )
+        }
 
     # Registry revocation is a hard stop, decided here rather than asked of the
     # LLM (#39): a "removed" server is one whose vetting the registry withdrew,

@@ -75,6 +75,20 @@ def build_root_context(
 ) -> str:
     parts = []
 
+    # Standing constraints — injected unconditionally (not gated on new_input) so
+    # the LLM always knows why certain dispatches will be mechanically refused (#214).
+    from ..core.constraint_store import active_constraints
+
+    constraints = active_constraints()
+    if constraints:
+        lines = [
+            "STANDING CONSTRAINTS (enforced mechanically — the daemon refuses"
+            " matching dispatches regardless of your reasoning):"
+        ]
+        for c in constraints:
+            lines.append(f"  #{c['id']}: {c['text']}")
+        parts.append("\n".join(lines))
+
     active_goals = app.goals.get_context()
     if active_goals:
         parts.append(f"GOALS: {json.dumps(active_goals)}")
