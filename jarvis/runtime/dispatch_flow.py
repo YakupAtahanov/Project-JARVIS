@@ -558,9 +558,7 @@ def _check_constraints(tasks: list[dict[str, Any]]) -> str:
             for c in constraints:
                 pat = c.get("pattern", "")
                 if pat and (norm == pat or norm.startswith(pat.rstrip("/") + "/")):
-                    return (
-                        f'Path "{norm}" matches constraint #{c["id"]}: {c["text"]!r}'
-                    )
+                    return f'Path "{norm}" matches constraint #{c["id"]}: {c["text"]!r}'
     return ""
 
 

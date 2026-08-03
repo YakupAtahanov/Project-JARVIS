@@ -523,7 +523,9 @@ def _cmd_constraints() -> None:
     for c in active:
         print(f"  #{c['id']}  {c['text']}")
         print(f"          pattern: {c['pattern']}")
-        print(f"          added:   {c['created_at'][:19]}  source: {c.get('source', '?')}")
+        print(
+            f"          added:   {c['created_at'][:19]}  source: {c.get('source', '?')}"
+        )
 
 
 def _cmd_constrain() -> None:
@@ -579,7 +581,7 @@ def show_usage() -> None:
     print("Pending Confirmations:")
     print()
     print("Standing Constraints:")
-    print('  jarvis constrain <path> [desc]     # Add path-prefix deny constraint')
+    print("  jarvis constrain <path> [desc]     # Add path-prefix deny constraint")
     print("  jarvis unconstrain <id>             # Remove constraint by id")
     print("  jarvis constraints                  # List active constraints")
     print()
