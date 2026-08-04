@@ -86,13 +86,13 @@
 
 **B.3.5 Vacancy.** If a seat is vacated by resignation, the Governance Pool fills it through a **fourteen (14) day** nomination and election (ranked choice, no self-nomination). If the Pool cannot fill the seat within thirty (30) days, Emergency Succession (B.7.2) applies.
 
-**B.3.6 Founder Succession on Death or Incapacity.** This section exists so that a Founder's death or sudden incapacity cannot hand a Founder Seat to whatever the Governance Pool happens to look like at that moment — which, before Stage 3–4 maturity, may be thin, new, or unrepresentative.
+**B.3.6 Founder Succession on Departure.** This section exists so that a Founder's departure from the Board — whether by death, permanent incapacity, or voluntary resignation — cannot hand a Founder Seat to whatever the Governance Pool happens to look like at that moment, nor leave the seat's disposition undefined at a stage where no election infrastructure yet exists. Voluntary resignation was historically the weaker case here: B.3.1(a) says a vacated Founder Seat "converts to Pool-Elected," but that mechanism presumes a Governance Pool or contributor-election process that does not yet exist at Stages 1–2. This Section closes that gap by routing every form of Founder departure — not just death or incapacity — through the same Bridge Period mechanics.
 
   (a) **Designated Successor.** Each Founder may, at any time, file with the Organization a signed, revocable **Designated Successor** — one named individual who will hold the Founder's seat in trust if the Founder dies or becomes permanently incapacitated. A Founder may change or revoke their Designated Successor at any time; only the most recently filed designation is effective.
 
   (b) **Eligibility restriction (immutable).** A Designated Successor must not be, at the time of designation or at the time of the triggering event, an employee, contractor, officer, or board member of any commercial Licensee, nor of any entity with a pending or reasonably anticipated commercial license application. This restriction cannot be waived by the Founder, the Board, or any amendment short of the process in B.4.6.
 
-  (c) **Bridge Period.** Upon a Founder's death or permanent incapacity (determined by the remaining Board members in good faith, or by the Founder's own advance written declaration), the Designated Successor — if named, available, and still eligible under (b) — assumes the Founder Seat for a **Bridge Period of twelve (12) months**, with full Founder Seat authority and subject to the same conflict-of-interest and recusal rules (B.4.3) as any Board member.
+  (c) **Bridge Period.** Upon a Founder's death, permanent incapacity (determined by the remaining Board members in good faith, or by the Founder's own advance written declaration), or voluntary resignation from the Board (effective upon the Founder's written notice), the Designated Successor — if named, available, and still eligible under (b) — assumes the Founder Seat for a **Bridge Period of twelve (12) months**, with full Founder Seat authority and subject to the same conflict-of-interest and recusal rules (B.4.3) as any Board member.
 
   (d) **No Designated Successor.** If no Designated Successor is named, available, or eligible, the seat is filled for the Bridge Period through Emergency Succession (B.7.2), applied regardless of whether the Board is actually below quorum.
 
@@ -146,7 +146,9 @@
 
   (j) B.2.8 — Employer Concentration Limit (no single employer may dominate the Governance Pool or Board once Stage 4 activates);
 
-  (k) B.3.6(b) — Designated Successor eligibility restriction (a Founder's emergency successor can never be affiliated with a commercial licensee).
+  (k) B.3.6(b) — Designated Successor eligibility restriction (a Founder's emergency successor can never be affiliated with a commercial licensee);
+
+  (l) B.10.4 and B.10.9 — Head Maintainer succession requires community ratification, never an outgoing maintainer's unilateral appointment of their own successor.
 
 ### B.5 — Financial Governance
 
@@ -287,3 +289,29 @@ The Organization's governance evolves through four stages. Stage advancement fro
   - Emergency Succession (B.7.2) remains available as a last resort if the Board falls below quorum.
 
 **B.9.5 Stage Verification.** The Board must verify and publicly declare the current Governance Stage annually. Any Active Contributor may challenge the declared stage by demonstrating that the objective criteria for a different stage are met. Disputes are resolved by an independent count of Active Contributors as recorded in the project's version control history.
+
+### B.10 — Technical Leadership (Head Maintainers)
+
+B.3–B.9 govern the Board: licensing, fees, and organizational matters. This Section governs a distinct role — day-to-day technical direction of the Software itself — and exists to define, in advance, how that role changes hands. The absence of a defined process is itself the risk this Section closes: without one, technical leadership succession defaults to whatever the outgoing leader personally decides, undocumented and unratified by anyone else. This Section's central rule (B.10.4) is that a personal handoff is never sufficient on its own.
+
+**B.10.1 Distinct from the Board.** Day-to-day technical direction — merge authority, release management, and architectural decisions for the Software — is held by **Head Maintainers**, a role distinct from Board membership. A Head Maintainer need not sit on the Board, and a Board member need not be a Head Maintainer, though at Stage 1 the Founders ordinarily hold both roles.
+
+**B.10.2 Initial Head Maintainers.** The Organization's Founders are its initial Head Maintainers. There is no fixed cap on the number of concurrent Head Maintainers — the role scales with the project's technical surface area (for example, one Head Maintainer per major subsystem is permitted), subject to B.10.5's eligibility bar and B.10.6's concentration limit.
+
+**B.10.3 Voluntary Step-Down.** A Head Maintainer may step down at any time by written notice. Step-down does not require Board approval and takes effect on the date specified in the notice, or immediately if none is specified.
+
+**B.10.4 Successor Selection — No Unilateral Appointment.** An outgoing Head Maintainer's personal choice of successor is **not, by itself, sufficient** to install a new Head Maintainer. This is a deliberate departure from informal, single-person-driven maintainer succession, where an outgoing maintainer's personal pick becomes the successor without any ratification step. Instead:
+
+  (a) **Stages 1–2 (pre-election infrastructure).** The outgoing Head Maintainer, or the remaining Head Maintainers if more than one, may name an interim successor. The interim appointment must be ratified by a simple majority of Active Contributors voting within thirty (30) days, publicized in the same channel used for governance announcements (B.9.2). If ratification fails, the interim successor is removed and the process repeats with a new nominee, or falls to B.10.7 (Emergency Fallback) if no nominee is ratified within ninety (90) days of the vacancy.
+
+  (b) **Stage 3+.** Successor selection follows the same nomination and ranked-choice election mechanics used for Board vacancies (B.3.5), run among Active Contributors (Stage 3) or the Governance Pool (Stage 4), rather than by outgoing-maintainer appointment.
+
+**B.10.5 Eligibility.** A Head Maintainer candidate — interim or ratified — must be an Active Contributor (B.2.2) meeting a minimum C-points threshold in the relevant subsystem, set and published by the Board, reflecting sustained, demonstrated technical contribution rather than tenure or seniority alone.
+
+**B.10.6 Employer Concentration Limit Parity.** A Head Maintainer may not be an employee, contractor, or officer of any commercial Licensee, mirroring the Board's Independent Seat restriction (B.3.1(c)) and the Employer Concentration Limit (B.2.8). A Head Maintainer who becomes so affiliated must disclose it within the window required by C-Points Methodology §1a and is subject to removal under B.10.8 if the affiliation is not resolved within ninety (90) days.
+
+**B.10.7 Emergency Fallback.** If a Head Maintainer role lapses vacant with no ratified successor per B.10.4, the Emergency Succession body (B.7.2 — the five most recent Active Contributors by contribution date) appoints an interim Head Maintainer, subject to the same thirty (30) day ratification requirement as B.10.4(a).
+
+**B.10.8 Recall.** A Head Maintainer is subject to the same Continuous Confidence Vote mechanism used for Board members (B.3.3) once Stage 4 is reached. At Stages 1–3, a Head Maintainer may be recalled by the same fifteen percent (15%) Active Contributor petition threshold used elsewhere in this Charter (e.g., B.6.3), triggering a simple-majority removal vote.
+
+**B.10.9 Immutable.** B.10.4's ratification requirement — that no Head Maintainer succession is valid on an outgoing maintainer's unilateral say-so alone — may not be amended or removed at any Governance Stage, by any process short of dissolution and reconstitution (B.4.6(l)).
