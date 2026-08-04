@@ -1,0 +1,21 @@
+post_install() {
+    # Create jarvis system user/group
+    getent group jarvis >/dev/null || groupadd -r jarvis
+    getent passwd jarvis >/dev/null || \
+        useradd -r -g jarvis -d /var/lib/jarvis -s /sbin/nologin \
+                -c "JARVIS AI Assistant" jarvis
+
+    chown -R jarvis:jarvis /var/lib/jarvis /var/log/jarvis
+
+    systemctl daemon-reload
+    echo "  -> Enable and start: systemctl enable --now jarvis"
+}
+
+post_upgrade() {
+    systemctl daemon-reload
+    systemctl try-restart jarvis 2>/dev/null || true
+}
+
+pre_remove() {
+    systemctl disable --now jarvis 2>/dev/null || true
+}
