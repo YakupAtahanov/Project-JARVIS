@@ -46,8 +46,15 @@ A Licensee facing revocation files a Contested Revocation Review petition (SCCL 
 
 **2.3 Founder dies/retires before Stage 3, seat falls to a thin, capturable Pool.**
 
-- *Holds:* Now addressed by Charter B.3.6 — Designated Successor holds the seat through a 12-month bridge, cannot be Licensee-affiliated (immutable), and the seat does not auto-convert into an immature Pool.
+- *Holds:* Now addressed by Charter B.3.6 — Designated Successor holds the seat through a 12-month bridge, cannot be Licensee-affiliated (immutable), and the seat does not auto-convert into an immature Pool. B.3.6 was originally scoped to death/incapacity only, leaving *voluntary* Founder resignation at Stage 1–2 with no defined path at all — worse than the death/incapacity case. B.3.6 has since been broadened ("Founder Succession on Departure") to route voluntary resignation through the same Bridge Period mechanics, closing that gap.
 - *Residual risk:* Relies on the Founder actually filing a Designated Successor in advance. If neither Founder ever files one, B.3.6(d) falls back to Emergency Succession (B.7.2) — "5 most recent Active Contributors by contribution date," which has no Employer Group diversity requirement of its own. **Partial gap** — B.7.2 could be strengthened to require those 5 not share an Employer Group, matching B.2.8's logic; not drafted here since it's Stage-1/2-era (pre-Pool, pre-B.2.8 activation) and the founders filing a Designated Successor is the primary intended mitigation.
+
+**2.4 Head Maintainer (technical leadership) succession decided informally by the outgoing maintainer's personal choice, with no community ratification.**
+
+Board succession has real mechanics (B.3.1, B.3.6, the Continuous Confidence Vote), but until now nothing in the Charter separately addressed *technical* maintainership — merge authority, release management, architectural direction. Without a defined process, that role's succession defaults to whatever the outgoing maintainer personally decides, a single-person handoff pattern seen elsewhere in open source that bypasses this Charter's contributor-vote mechanisms entirely.
+
+- *Holds:* Charter B.10 (Technical Leadership) now defines Head Maintainer as a role distinct from the Board, requires community ratification for any successor — interim or permanent — rather than unilateral outgoing-maintainer appointment (B.10.4), applies the Employer Concentration Limit logic to the role (B.10.6), and subjects Head Maintainers to recall (B.10.8). B.10.4's ratification requirement is itself immutable (B.10.9, referenced from B.4.6(l)), so it cannot be quietly repealed by a future captured Board.
+- *Residual risk:* At Stage 1–2, ratification is a simple majority of whatever small set of Active Contributors exists at that moment (B.10.4(a)) — with very few contributors, this is a low bar in practice, though no lower than the Board's own Stage 1–2 authority elsewhere in this Charter. Treated as an acceptable early-stage trade-off, not a drafting gap: the alternative — no succession path at all before Stage 3 — is worse.
 
 ---
 
@@ -77,7 +84,8 @@ A Licensee facing revocation files a Contested Revocation Review petition (SCCL 
 | 2 | Affiliated-Entities >50% control test is a bright line, gameable via minority-stake structuring (1.2, 3.2) | Medium | Not fixed |
 | 3 | Employer bloc may rationally oppose Stage 4 activation to avoid B.2.8's cap (2.1) | **High** | Not fixed — most significant open item |
 | 4 | Continuous Confidence Vote's 10% participation floor allows small coordinated blocs to act at low turnout (2.2) | Medium | Not fixed |
-| 5 | Emergency Succession (B.7.2) has no Employer Group diversity requirement if no Designated Successor is filed (2.3) | Low–Medium | Partial (mitigated by encouraging Designated Successor filing) |
+| 5 | Emergency Succession (B.7.2) has no Employer Group diversity requirement if no Designated Successor is filed (2.3) | Low–Medium | Partial (mitigated by encouraging Designated Successor filing; the separate voluntary-resignation gap in B.3.6 is now closed) |
+| 6 | Head Maintainer (technical lead) succession previously undefined — risked single-person, unratified handoff (2.4) | High (until fixed) | Fixed — Charter B.10 |
 
 None of these risks are fabricated to look resolved — they are named here specifically because SCCL/Charter drafting alone cannot close them with confidence; they need either further design iteration, or a judgment call from actual legal/governance counsel about acceptable risk tolerance, before Issue #83 can honestly close its "adversarial scenarios" checklist item.
 
