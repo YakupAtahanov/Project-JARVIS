@@ -82,7 +82,7 @@ Pull requests from individual contributors are checked at merge time for a signe
 
 ### 4.3 Retroactive Coverage
 
-Contributions merged before this Grant's effective date are covered once the original Contributor executes this Grant retroactively. The Organization shall prioritize collecting retroactive execution from all contributors of record as of this Grant's adoption before any SCCL license is issued covering their code.
+Contributions merged before this Grant's effective date are covered once the original Contributor executes this Grant retroactively. The Organization shall prioritize collecting retroactive execution from all contributors of record as of this Grant's adoption before any SCCL license is issued covering their code. Executed Grants — retroactive and prospective alike — are recorded in [`legal/contributor-grant-signatories.md`](contributor-grant-signatories.md), mirroring the registry process used for the commercial CLA (`cla.md` Article 5.1).
 
 ---
 
