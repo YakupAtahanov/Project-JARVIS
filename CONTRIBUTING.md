@@ -48,6 +48,12 @@ git commit -s -m "Fix memory leak in dispatch adapter"
 
 Commits without a valid `Signed-off-by` line will not be merged.
 
+### Contributor Grant
+
+In addition to the DCO sign-off above, individual contributors must execute the [Contributor Grant](legal/contributor-grant.md) once before their first contribution is merged. The DCO confirms you have the right to submit your work; the Contributor Grant is the actual license grant that lets the Organization include your code in both the AGPLv3 release and, later, in code offered under the [SCCL](legal/SCCL-v1.md) to commercial licensees. You keep full ownership of your contribution — see `legal/contributor-grant.md` Article 2.3.
+
+Pull requests are checked at merge time for both a valid DCO sign-off and an executed Contributor Grant on file.
+
 ### Code of Conduct
 
 All contributors must follow the project's Code of Conduct. Respectful, constructive interaction is expected in all project spaces — issues, PRs, discussions, and chat.
@@ -60,7 +66,7 @@ If you are contributing on behalf of a company operating under the **Sovereign C
 
 ### Contributor License Agreement (CLA)
 
-Commercial licensees must sign the project's CLA before contributions can be accepted. The CLA covers intellectual property assignment for contributions made under SCCL. Contact the Organization for the current CLA.
+Commercial licensees must sign the project's CLA before contributions can be accepted. The CLA covers intellectual property assignment for contributions made under SCCL, and also requires the licensee and its contributing personnel to follow this project's Code of Conduct and community standards (CLA Article 4). Contact the Organization for the current CLA.
 
 ### Contribution-Back Requirement
 
