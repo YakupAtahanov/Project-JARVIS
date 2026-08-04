@@ -11,7 +11,7 @@
 
 This Contributor License Agreement ("Agreement") applies to **commercial licensees** contributing modifications or derivative works to the Project JARVIS codebase under the obligations of the Sustainable Commercial Contributor License (SCCL), Article 5.
 
-Community contributors (individuals) do not sign this Agreement. They use the **Developer Certificate of Origin (DCO)** — a `Signed-off-by` line in each commit — as documented in `CONTRIBUTING.md`.
+Community contributors (individuals) do not sign this Agreement. They execute the **[Contributor Grant](contributor-grant.md)** together with the **Developer Certificate of Origin (DCO)** — a `Signed-off-by` line in each commit — as documented in `CONTRIBUTING.md`. The DCO establishes provenance; the Contributor Grant establishes the license rights the DCO alone does not grant.
 
 This Agreement governs:
 1. Contributions made to satisfy the mandatory contribution-back obligation under SCCL Article 5 (modifications to the Software deployed in a commercial product, due within 90 days of deployment).
@@ -69,9 +69,21 @@ The Contributor represents and warrants that:
 
 ---
 
-## Article 4 — Process
+## Article 4 — Community Standards Compliance
 
-### 4.1 Signing
+**4.1 Code of Conduct.** The Contributor, and any personnel of the Contributor who interact with the Project's spaces (issues, pull requests, discussions, chat, or events) on the Contributor's behalf, shall adhere to the Project's published Code of Conduct at all times, consistent with SCCL Article 3.1.
+
+**4.2 Community Standards.** Contributions and related conduct submitted under this Agreement are subject to the same review standards, engineering guidelines, and community norms documented in `CONTRIBUTING.md` and `docs/engineering-standards.md` as any other contribution — signing this Agreement grants IP rights, it does not grant exemption from ordinary review or community process.
+
+**4.3 Relationship to Ecosystem Alignment.** A material or repeated violation of this Article by the Contributor's personnel is conduct the Board may consider under the Licensee Relationship Index (SCCL Definition 1.11) and, where sufficiently severe or persistent, grounds for Cure Period or revocation proceedings under SCCL Article 6 — independent of, and in addition to, any consequence under Article 5 (Process) of this Agreement.
+
+**4.4 Individual Accountability, Not a Waiver of Employer Obligation.** Nothing in this Article shifts a Contributor entity's Article 5 (SCCL) obligations onto individual personnel, and nothing in this Article limits the individual governance-eligibility rules of Organization Charter B.2.4.
+
+---
+
+## Article 5 — Process
+
+### 5.1 Signing
 
 This Agreement is signed **per legal entity** (not per individual developer). One signed Agreement covers all Contributions made by employees or contractors of the Contributor.
 
@@ -80,31 +92,31 @@ Signing process:
 2. The Organization maintains a registry of signed CLAs. Upon signing, the Contributor is added to `legal/cla-signatories.md`.
 3. A signed Agreement remains in effect indefinitely unless terminated by either party with 30 days' written notice.
 
-### 4.2 Submission
+### 5.2 Submission
 
 Contributions subject to this Agreement are submitted via pull request to the Project JARVIS GitHub repository. Each pull request must:
 - Reference the SCCL Article 5 obligation (if applicable) or state that it is a voluntary contribution.
 - Include a commit footer: `Contributed-under: Project JARVIS CLA v1.0`
 
-### 4.3 Relationship to SCCL Article 5
+### 5.3 Relationship to SCCL Article 5
 
 This Agreement satisfies the legal framework for the contribution-back obligation in SCCL Article 5. A Contributor that has not signed this Agreement is not in compliance with Article 5 until a signed Agreement is on file with the Organization.
 
 ---
 
-## Article 5 — Disclaimer
+## Article 6 — Disclaimer
 
 THE CONTRIBUTION IS PROVIDED "AS IS". THE CONTRIBUTOR MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION WARRANTIES OF FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.
 
 ---
 
-## Article 6 — Governing Law
+## Article 7 — Governing Law
 
 This Agreement is governed by the laws of the jurisdiction specified in the Organization Charter (SCCL Article 8.3), without regard to conflict-of-law principles.
 
 ---
 
-## Article 7 — Entire Agreement
+## Article 8 — Entire Agreement
 
 This Agreement, together with the SCCL and the Organization Charter, constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior or contemporaneous understandings regarding such subject matter.
 

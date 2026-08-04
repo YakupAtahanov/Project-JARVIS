@@ -16,13 +16,13 @@
 
 ### B.2 — Membership
 
-**B.2.1 Contributors.** Any individual who has authored at least one merged contribution to the Software (as evidenced by the project's version control history and signed off via DCO) is a Contributor. Contributors are the primary stakeholders of the Organization.
+**B.2.1 Contributors.** Any individual who has authored at least one merged contribution to the Software (as evidenced by the project's version control history, signed off via DCO, and covered by an executed [Contributor Grant](contributor-grant.md)) is a Contributor. Contributors are the primary stakeholders of the Organization.
 
 **B.2.2 Active Contributors.** A Contributor is "Active" if they have authored at least one merged contribution within the preceding twenty-four (24) months. Only Active Contributors may exercise governance rights available at the current Governance Stage.
 
 **B.2.3 Corporate Contribution Exclusion.** Contributions submitted on behalf of a commercial licensee — including those fulfilling the contribution-back obligation under SCCL Article 5, signed under the CLA, or authored in the scope of employment with a licensee — do **not** count toward an individual's Active Contributor status for governance purposes. Such contributions satisfy the licensee's contractual obligations but confer no governance rights.
 
-**B.2.4 Individual Contributions by Licensee Employees.** An individual employed by a commercial licensee may qualify as an Active Contributor if and only if: (a) the contribution is signed off via DCO (not CLA); (b) the contribution is made outside the scope of their employment; and (c) the contribution is not fulfilling any part of their employer's SCCL Article 5 obligations. The individual's governance rights are personal and may not be directed or influenced by their employer.
+**B.2.4 Individual Contributions by Licensee Employees.** An individual employed by a commercial licensee may qualify as an Active Contributor if and only if: (a) the contribution is made outside the scope of their employment; and (b) the contribution is not fulfilling any part of their employer's SCCL Article 5 obligations. Which rights-grant mechanism was used — the individual's own [Contributor Grant](contributor-grant.md) per B.2.1, versus the commercial CLA their employer separately signs for Article 5 contributions — does not by itself determine governance eligibility; (a) and (b) are the operative test. The individual's governance rights are personal and may not be directed or influenced by their employer.
 
 **B.2.5 Contribution Points (C-Points).** Each Active Contributor accumulates **Contribution Points (C-points)** — a weighted composite score reflecting the quality, scope, and nature of their contributions. C-points are used to rank contributors for Governance Pool membership (B.2.6) and other governance purposes. The methodology for calculating C-points — including the variables considered and their respective weights — is defined in the [C-Points Methodology](c-points.md). C-points are recalculated continuously as contributions are merged.
 
