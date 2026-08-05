@@ -432,7 +432,7 @@ Six threats identified through live operation, and their current status:
 | Threat | Status |
 |---|---|
 | Malicious MCP servers | implemented — registry vetting + `dmcp` manifest-hash verify + agent source-confinement |
-| Prompt injection | partial — dispatch tags untrusted MCP output with a 128-bit CSPRNG boundary nonce; daemon does not yet verify the tag |
+| Prompt injection | implemented — dispatch tags untrusted MCP output with a 128-bit CSPRNG boundary nonce, and the daemon verifies it on every EXIT/TIMEOUT (`jarvis/dispatch/boundary.py`, #165), marking any mismatch UNVERIFIED in-band; system prompts instruct the model to treat boundary content as data-only |
 | Misleading MCP server usage | partial — official-tier review of tool descriptions + structured schema |
 | Unauthorized sudo via MCP | implemented — the host floor in `jarvis/core/threat_level.py` rates command-execution tools (`run_command`, `exec`, `shell`, …) at least DANGEROUS regardless of what a manifest declares, so a shell server cannot under-declare its own threat level (#159/#162) |
 | Sudo capability exploitation | implemented — same author-proof host floor, plus a dangerous-payload scan of tool params (`sudo`, `rm -rf`, `dd if=`, pipe-to-shell, …); TLA confirmation is goal-scoped |
