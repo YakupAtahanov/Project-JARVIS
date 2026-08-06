@@ -128,17 +128,26 @@ password-required, visudo-validated `/etc/sudoers.d/jarvis` drop-in (atomic
 install) — Linux only; macOS/Windows report "not granted" rather than managing
 sudoers.
 
-Shell servers are installed from the MCP registry, not bundled here. A
-user-scope shell server that escalates a privileged command via `sudo -A` has
-its askpass helper resolved **per OS** through the platform layer
-(`BasePlatform.find_askpass()` / `askpass_helpers()`), so the GUI password
-prompt stays the boundary on every platform:
+Shell servers are installed from the MCP registry, not bundled here.
 
-| OS | Askpass resolution |
-|----|--------------------|
-| Linux | probes five candidates in priority order — `/usr/bin/ksshaskpass`, `/usr/lib/ssh/ksshaskpass`, `ssh-askpass`, `lxqt-openssh-askpass`, `x11-ssh-askpass`; `elevate()` raises with the full candidate list if none is installed |
-| macOS | no CLI askpass ships with the OS, so `find_askpass()` installs an `osascript`-backed shim at `/usr/local/libexec/jarvis-osascript-askpass` that presents the same interface (native "with administrator privileges" dialog) |
-| Windows | no askpass — elevation is a UAC consent prompt, so `askpass_helpers()` is empty |
+**Elevation is decided by dmcp scope, not by this daemon.** A system-scope
+server is spawned under pkexec/polkit and already runs as root — which is why
+the ROOT prompt rule says never to prefix `sudo`. The password prompt is
+polkit's, raised by dmcp's re-exec, and it is deliberately outside this
+daemon's reach (a flag JARVIS could write would be a self-escalation path).
+
+`BasePlatform` still carries a `sudo -A` askpass surface from the bundled
+shell server that was retired in `357aeca` — `find_askpass()`,
+`askpass_helpers()`, `elevate()`, `grant_privilege()`/`revoke_privilege()`/
+`is_privilege_granted()`, `privileged_prefixes()`, `open_command()`. **None of
+these has a caller outside `jarvis/platform/` today** (verified by grep,
+including tests). They are retained per-OS scaffolding, not a live mechanism;
+do not describe them as the boundary. See #208 for the wire-or-drop decision.
+
+The IPC half of the platform layer *is* live: `ipc_verify_peer()` (accept-time
+peer credential check, `runtime/io.py`) and `system_ipc_candidates()`
+(`cli.py`). `resolve_sidecar()` is exercised only by tests today, but is the
+mechanism a packaged install needs — keep it until packaging lands.
 
 ---
 
