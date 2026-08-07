@@ -749,23 +749,117 @@ async def dispatch_send(
     }
 
 
+# Manifest-derived per-tool threat declarations, cached for the daemon's
+# lifetime alongside _STATEFUL_BY_SERVER (same rationale — a static property of
+# an installed server that must not cost a manifest read per dispatch).
+# `threat_level` and the legacy `confirmation_required` are REGISTRY-manifest
+# fields; they are absent from the MCP `tools/list` output that
+# `list_server_tools` returns, so without merging them here the TLA gate's
+# `threat_level._declared()` only ever saw SAFE and every manifest declaration
+# was inert — a dangerous tool whose bare NAME is not in the host floor
+# (blender's execute_blender_code, the whole filesystem server) escaped
+# confirmation. Empty/failed reads are NOT cached, so a server installed
+# mid-session or a transient read failure is retried on the next dispatch.
+_THREAT_DECL_BY_SERVER: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+async def _server_threat_decls(
+    app: Any, logger: Logger, server_id: str
+) -> Optional[dict[str, dict[str, Any]]]:
+    """Per-tool ``{threat_level, confirmation_required}`` map from the manifest.
+
+    Read locally (``get_server_manifest`` — no network). Returns ``None`` when
+    the manifest cannot be read (missing, unreadable, or carries an ``error``);
+    the caller then falls back to today's host-floor + payload-scan gate. A
+    readable manifest is cached even when it declares nothing, so a genuinely
+    undeclared server is not re-read every dispatch.
+    """
+    cached = _THREAT_DECL_BY_SERVER.get(server_id)
+    if cached is not None:
+        return cached
+    try:
+        manifest = await app.dispatch.get_server_manifest(server_id)
+    except Exception as e:
+        logger.warning(
+            f"JARVIS: threat-level manifest lookup failed for '{server_id}' ({e})"
+        )
+        return None
+    if not isinstance(manifest, dict) or not manifest or "error" in manifest:
+        return None
+    decls: dict[str, dict[str, Any]] = {}
+    tools = manifest.get("tools")
+    if isinstance(tools, list):
+        for entry in tools:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            decl: dict[str, Any] = {}
+            if "threat_level" in entry:
+                decl["threat_level"] = entry["threat_level"]
+            if "confirmation_required" in entry:
+                decl["confirmation_required"] = entry["confirmation_required"]
+            if decl:
+                decls[name] = decl
+    _THREAT_DECL_BY_SERVER[server_id] = decls
+    return decls
+
+
 async def get_tool_metadata(
     app: Any, logger: Logger, task: dict[str, Any]
 ) -> dict[str, Any]:
-    """Retrieve metadata for a task's tool from the dispatch registry."""
+    """Retrieve metadata for a task's tool, merged with its manifest threat level.
+
+    The runtime ``tools/list`` view (name/description/inputSchema) is the base;
+    the registry manifest's per-tool ``threat_level`` / ``confirmation_required``
+    are merged on top so the TLA gate actually classifies from the author's
+    declaration. Additive only — a declaration never clobbers a field the
+    runtime tool legitimately provides.
+    """
     server_id = task.get("server")
     tool_name = task.get("tool")
     if not server_id or not tool_name:
         return {}
+
+    meta: dict[str, Any] = {}
     try:
         tools = await app.dispatch.list_server_tools(server_id)
         if isinstance(tools, dict) and "tools" in tools:
             for tool in tools["tools"]:
-                if tool.get("name") == tool_name:
-                    return tool
+                if isinstance(tool, dict) and tool.get("name") == tool_name:
+                    meta = dict(tool)
+                    break
     except Exception as e:
         logger.debug(f"Could not fetch metadata for {server_id}.{tool_name}: {e}")
-    return {}
+
+    # Merge the manifest's declared threat level onto the runtime metadata.
+    # Both fallbacks are logged, not swallowed (contrast the constraint-store
+    # fail-open): an unreadable manifest reopens the unknown-name gap for the
+    # WHOLE server — the TLA gate loses every declaration it carried and drops
+    # back to the host floor + payload scan, which is exactly what left
+    # decorative declarations inert in the first place. A readable manifest that
+    # does not declare this specific tool falls back the same way; with the
+    # audit at 215/215 declared that is itself anomalous, so it warns too.
+    decls = await _server_threat_decls(app, logger, server_id)
+    if decls is None:
+        logger.warning(
+            f"JARVIS: no readable manifest for '{server_id}'; TLA cannot see its "
+            f"declared threat levels — falling back to host floor + payload scan "
+            f"for '{tool_name}'"
+        )
+        return meta
+    decl = decls.get(tool_name)
+    if not decl:
+        logger.warning(
+            f"JARVIS: '{server_id}/{tool_name}' declares no threat_level in its "
+            f"manifest — TLA gates it on host floor + payload scan only"
+        )
+        return meta
+    for key in ("threat_level", "confirmation_required"):
+        if key in decl and key not in meta:
+            meta[key] = decl[key]
+    return meta
 
 
 async def dispatch_execute_tasks(
