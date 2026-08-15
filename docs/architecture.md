@@ -351,7 +351,7 @@ See `docs/SECURITY-ARCHITECTURE.md` for the full threat model and CVE context.
 4. **PolicyKit** — `jarvis-jarvis.rules` grants `jarvis` user privilege escalation for specific `dmcp` operations (see `packages/polkit/`)
 5. **Kernel (OS-embodiment)** — `jarvis_policy.c` in `linux-jarvisos` mirrors the 4-tier policy with rate limiting via `/dev/jarvis` and `/sys/class/misc/jarvis/policy/`; not consulted from the daemon's execution path today
 
-**Threat taxonomy** (from research, `docs/research.md`): six threats documented during live operation, including the novel **Bloated Context** (#6) — a single context-lifecycle failure with two faces: security constraints crowded out of a saturated context window, and constraints never durably stored, so a context refresh loses them structurally. See `docs/SECURITY-ARCHITECTURE.md` for canonical per-threat implementation status. Active mitigations in progress: persistent constraint register in the daemon (enforced at the dispatch gate) for the non-persistence face, path-based rules in `jarvis_policy.c` for `/etc`/`/usr`/`/boot` writes. (SHA-256 integrity verification of `dmcp` server manifests and setup scripts is already implemented in `dmcp install` — there is no GPG signing.)
+**Threat taxonomy** (from research, `docs/research.md`): six threats documented during live operation, including the novel **Bloated Context** (#6) — a single context-lifecycle failure with two faces: security constraints crowded out of a saturated context window, and constraints never durably stored, so a context refresh loses them structurally. See `docs/SECURITY-ARCHITECTURE.md` for canonical per-threat implementation status. Shipped for the non-persistence face: the persistent constraint register (#214) — path-prefix deny rules enforced at the dispatch gate. Still in progress: generalizing the register beyond path rules, and path-based rules in `jarvis_policy.c` for `/etc`/`/usr`/`/boot` writes. (SHA-256 integrity verification of `dmcp` server manifests and setup scripts is already implemented in `dmcp install` — there is no GPG signing.)
 
 ---
 
@@ -377,6 +377,8 @@ The LLM derives a **capability** (domain/service), not keywords or implementatio
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-15:* the persistent constraint register is no longer "in progress" — it shipped (#214, `jarvis/core/constraint_store.py`): path-prefix deny rules enforced at the dispatch gate ahead of the confirmation mode and re-injected into every ROOT prompt. The security-layer summary now states it as shipped with its path-rule scope explicit; generalizing it is what remains in progress.
 
 *2026-08-01 (later):* the daemon's **in-memory** two-tier context manager now runs (#213) — `LLM.ask()` applies the hot window on every ROOT turn and compresses evicted exchanges into `ContextManager._rolling_summary`, where previously the trim fired only from a mode switch that never happened. This does **not** change the session-store rows above: `SessionManager.save_summary()` still has no callers, so contextor's per-session rolling-summary column remains unpopulated and the in-memory summary does not survive a restart. The two are different summaries — worth keeping distinct when citing either.
 

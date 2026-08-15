@@ -33,7 +33,7 @@ non-persistence face remains open — see the changelog below.)
 | 3 | Misleading MCP Server Usage | official-tier review of tool descriptions + structured schema | **partial** |
 | 4 | Unauthorized Sudo via MCP | userspace Threat-Level-Access confirmation gate with host-floor classification (`jarvis/core/threat_level.py`) | **implemented** — command-execution tools and dangerous payloads are force-confirmed regardless of manifest flags (#159/#162 closed) |
 | 5 | Sudo Capability Exploitation | same confirmation gate | **implemented** |
-| 6 | Bloated Context (novel) | dispatch rolling window + contextor pruning + the daemon's two-tier context manager (hot window + rolling summary), which `LLM.ask()` now applies on every ROOT turn (#213), bound the saturation face; a persistent constraint register in the daemon, enforced at the dispatch gate, is planned for the non-persistence face (#214) | **partial** — saturation bounded (window applied, evicted turns compressed into the rolling summary), non-persistence open; the highest-priority open item |
+| 6 | Bloated Context (novel) | dispatch rolling window + contextor pruning + the daemon's two-tier context manager (hot window + rolling summary), which `LLM.ask()` now applies on every ROOT turn (#213), bound the saturation face; the persistent constraint register (`jarvis/core/constraint_store.py`, #214) — path-prefix deny rules persisted on disk, enforced at the dispatch gate ahead of the confirmation mode, and re-injected into every ROOT prompt — is the first mechanical mitigation for the non-persistence face | **partial** — saturation bounded (window applied, evicted turns compressed into the rolling summary); non-persistence mitigated for path-prefix deny rules, open for broader constraints; generalizing the register is the highest-priority open item |
 | — | Kernel 4-tier policy engine (`/dev/jarvis`) | linux-jarvisos + daemon `KernelClient` | **OS-side** — not consulted from the daemon today |
 
 ### On the "TLA" acronym (important for the paper)
@@ -238,8 +238,11 @@ confirmation gate as well.
 **Current mitigations:**
 - `jarvis/core/socket_security.py` sets socket permissions to `0600` —
   only the owner can read/write.
-- `verify_socket_ownership()` checks that the socket was created by the
-  current user before connecting, preventing pre-created hijack sockets.
+- Clients check that the socket was created by the current user before
+  connecting, preventing pre-created hijack sockets. The live check is
+  `platform.ipc_verify_owner()`, called directly from `jarvis/cli.py`;
+  the `socket_security.verify_socket_ownership()` wrapper delegates to
+  the same check but has no callers today.
 
 **Planned:**
 - `SO_PEERCRED` check on connection accept — the kernel exposes the
@@ -304,6 +307,8 @@ vulnerabilities.
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-15:* claims-audit pass against the code, two corrections. (1) The persistent constraint register is no longer "planned": `jarvis/core/constraint_store.py` (#214) shipped — path-prefix deny rules persisted at `$JARVIS_DATA_DIR/constraints.json` with atomic writes, enforced mechanically at `dispatch_flow._check_constraints()` **before** the confirmation gate (so `CONFIRMATION_MODE=allow_all` cannot bypass it), re-injected into every ROOT prompt by `root_context.py`, and user-managed via `jarvis constrain`/`unconstrain`/`constraints`. Threat 6's row and status now say so; the face stays open for constraints that are not path-prefix deny rules, and generalizing the register is the open item. (2) The same-user socket section cited `verify_socket_ownership()` as the pre-connect ownership check, but that wrapper has zero callers — the live check is `platform.ipc_verify_owner()` called directly from `jarvis/cli.py`. The citation now names the code that actually runs (fifth instance of docs citing a dead path — grep for callers before citing).
 
 *2026-08-01 (later):* the dead path behind Threat 6's saturation face is repaired (#213). `LLM.ask()` now calls `_trim_root_history()` on every ROOT turn before appending the new input, instead of relying on `switch_mode("root")` — which early-returns on an unchanged mode and therefore never fired. The hot window (`ROOT_HISTORY_WINDOW`, 3 exchange pairs) is applied for real, and evicted pairs are compressed into the rolling summary by `compress_evicted()` rather than accumulating. `_trim_root_history()` rebinds `_histories["root"]`, so `ask()` re-aliases `chat_history` onto the new list; without that the appended turn would land on the discarded one. Threat 6's enforcement column and status are updated accordingly: the saturation face is now bounded by the window being applied and evicted turns being compressed, not merely by dispatch's signal window and contextor pruning. **The non-persistence face is unchanged and still open** — a rolling summary is lossy compression, not a durable constraint store, so a constraint can still be summarized away; the persistent constraint register enforced at the dispatch gate (#214) remains the mitigation and the highest-priority open item. Note the running cost this restores by design: once a conversation exceeds the window, each turn evicts a pair and `compress_evicted()` issues its own provider call, so a steady-state ROOT turn now costs one extra LLM round trip. Raising `ROOT_HISTORY_WINDOW` reduces how often that fires. Regression-tested in `tests/test_integration_llm.py::TestRootHistoryWindow` (history stays bounded, the rolling summary is populated, `chat_history` is not left aliasing the discarded list); the first two fail against the pre-fix code. `SessionManager.save_summary()` still has zero callers, so the summary remains in-memory and does not survive a restart — that half is untouched.
 

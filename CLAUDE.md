@@ -111,7 +111,9 @@ set it > 0 to restore auto-deny for unattended/headless setups.
 `jarvis.sock` (GUI) — overridable via `JARVIS_INPUT_SOCKET` /
 `JARVIS_OUTPUT_SOCKET` / `JARVIS_GUI_SOCKET`:
 - `harden_socket_path()` — platform-delegated (0600 on Linux/macOS, localhost TCP on Windows)
-- `verify_socket_ownership()` — checks UID before connecting
+- pre-connect ownership check — clients call `platform.ipc_verify_owner()`
+  directly (`cli.py`); the `verify_socket_ownership()` wrapper delegates to
+  the same check but has **no callers** — cite the platform call, not the wrapper
 - `warn_if_allow_all()` — logs warning when confirmation is disabled
 
 ### Output-Provenance Boundary (Prompt Injection)
@@ -214,6 +216,7 @@ make check                  # Format + lint + typecheck + tests
 | `jarvis/tui/config_modal.py` | Tabbed config/provider settings modal (F2 / /settings) |
 | `jarvis/tui/provider_modal.py` | Provider add/edit modal |
 | `jarvis/core/confirmation_manager.py` | Multi-channel confirmation gate |
+| `jarvis/core/constraint_store.py` | Standing path-prefix deny constraints (#214), enforced in `dispatch_flow` ahead of the confirmation mode |
 | `jarvis/core/socket_security.py` | Socket hardening |
 | `jarvis/core/sudo_manager.py` | `jarvis sudo` — sudoers drop-in management (#158) |
 | `jarvis/dispatch/boundary.py` | Output-provenance boundary verification (#165) |
@@ -240,6 +243,8 @@ make check                  # Format + lint + typecheck + tests
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-15:* socket-security bullet corrected — `verify_socket_ownership()` has no callers; the live pre-connect ownership check is `platform.ipc_verify_owner()` called directly from `cli.py`. Key Files gains `jarvis/core/constraint_store.py` (#214), which was shipped but undocumented here.
 
 *2026-08-07:* the TLA gate now sees a manifest's per-tool `threat_level` at runtime. `get_tool_metadata` (`jarvis/runtime/dispatch_flow.py`) fed the confirmation gate only the live MCP `tools/list` view (name/description/inputSchema) from `list_server_tools`; `threat_level` and the legacy `confirmation_required` are REGISTRY-manifest fields absent from that protocol output, so `threat_level._declared()` always read SAFE and **every manifest declaration was inert** — the registry audit's 215/215 threat levels were decorative, and a dangerous tool whose bare NAME is not in the host floor (blender's `execute_blender_code`, the whole filesystem server) escaped confirmation in `smart` mode. `get_tool_metadata` now merges the manifest's per-tool declaration onto the runtime metadata, sourced from the **local** `get_server_manifest` (no network) and cached per server_id (`_THREAT_DECL_BY_SERVER`, modelled on `_STATEFUL_BY_SERVER`). The merge is additive — the runtime tool dict stays, a declaration never clobbers a field the runtime tool provides — and fail-safe but LOUD: an unreadable manifest (or a tool absent from a readable one) falls back to today's host-floor + payload-scan gate and logs a WARNING rather than swallowing it, because an unreadable manifest reopens the unknown-name gap for that whole server; a manifest read never crashes a dispatch. Verified red-then-green in `tests/test_threat_level_manifest_merge.py` (13 tests): the load-bearing case — server `blender`, tool `execute_blender_code`, params `{"code":"print(1)"}` (host floor SAFE, no payload match) with a manifest declaring `dangerous` — is SAFE/not-confirmed against the unfixed `get_tool_metadata` and DANGEROUS/confirmed after the merge; plus caching (one manifest read across repeated dispatches), retry-not-pinned on a failed read, the warning on an unreadable manifest, and a manifest-`safe` tool staying unconfirmed.
 
