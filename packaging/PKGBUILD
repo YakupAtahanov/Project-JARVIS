@@ -1,0 +1,95 @@
+# Maintainer: JarvisOS Team <https://github.com/JarvisOSLinux>
+#
+# Usage (from repo root or via 04-bake-jarvis.sh):
+#   export JARVIS_SRC=/path/to/Project-JARVIS
+#   cd "$JARVIS_SRC/packaging"
+#   makepkg --nodeps --nocheck --skipinteg --force
+#
+pkgname=project-jarvis
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='JARVIS AI assistant daemon — voice, text, and concurrent MCP dispatch'
+arch=(any)
+url='https://github.com/JarvisOSLinux/Project-JARVIS'
+license=(GPL-3.0-only)
+depends=(
+    python
+    python-dotenv
+    python-httpx
+    python-pathspec
+    dmcp
+    dispatch-mcp
+    ollama
+)
+makedepends=(
+    python-build
+    python-installer
+    python-wheel
+    python-setuptools
+    python-setuptools-scm
+)
+optdepends=(
+    'python-ollama: Ollama Python client (required at runtime — install from AUR)'
+    'python-mcp: MCP protocol library (required at runtime — install from AUR)'
+    'python-vosk: offline speech recognition'
+    'python-sounddevice: microphone/speaker audio I/O'
+    'python-onnxruntime: piper-tts inference backend'
+    'python-faster-whisper: higher-accuracy STT (replaces vosk)'
+    'python-textual: terminal UI (jarvis tui)'
+)
+backup=(etc/jarvis/jarvis.conf)
+install=project-jarvis.install
+source=()
+
+_src="${JARVIS_SRC:?JARVIS_SRC must be set to the absolute path of Project-JARVIS/}"
+
+pkgver() {
+    git -C "$_src" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' \
+        || printf '0.1.0.r%s.g%s' \
+            "$(git -C "$_src" rev-list --count HEAD)" \
+            "$(git -C "$_src" rev-parse --short=7 HEAD)"
+}
+
+build() {
+    cd "$_src"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$_src"
+
+    python -m installer --destdir="$pkgdir" dist/*.whl
+
+    # Install Python package to /usr/lib/jarvis for daemon PYTHONPATH
+    install -dm755 "$pkgdir/usr/lib/jarvis"
+    local _site
+    _site=$(python -c 'import site; print(site.getsitepackages()[0])')
+    [[ -d "$pkgdir/$_site/jarvis" ]] && \
+        cp -r "$pkgdir/$_site/jarvis" "$pkgdir/usr/lib/jarvis/"
+
+    # Daemon wrapper
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/jarvis-daemon" << 'EOF'
+#!/bin/bash
+VENV_PATH="/var/lib/jarvis/venv"
+[ -f "${VENV_PATH}/bin/activate" ] && source "${VENV_PATH}/bin/activate"
+export PYTHONPATH="/usr/lib:${PYTHONPATH:-}"
+cd /usr/lib/jarvis
+exec python -m jarvis.cli run "$@"
+EOF
+
+    # systemd service
+    install -Dm644 packaging/jarvis.service \
+        "$pkgdir/usr/lib/systemd/system/jarvis.service"
+
+    # Config template
+    [[ -f jarvis/.env.example ]] && \
+        install -Dm640 jarvis/.env.example \
+            "$pkgdir/etc/jarvis/jarvis.conf"
+
+    # Runtime directories (created by systemd RuntimeDirectory= but ship
+    # the static dirs so pacman owns them)
+    install -dm750 "$pkgdir/var/lib/jarvis"
+    install -dm750 "$pkgdir/var/lib/jarvis/models"
+    install -dm750 "$pkgdir/var/log/jarvis"
+    install -dm750 "$pkgdir/etc/jarvis"
+}
