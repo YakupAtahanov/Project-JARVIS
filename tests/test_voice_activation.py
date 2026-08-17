@@ -5,6 +5,7 @@ This module tests the voice activation system components and
 graceful degradation when audio is unavailable.
 """
 
+import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -22,34 +23,35 @@ class TestVoiceActivationHealth:
             pytest.skip(f"Voice activation dependencies not available: {e}")
 
     def test_voice_activation_creation_fails_gracefully(self):
-        """Test voice activation creation fails gracefully when audio unavailable."""
-        try:
-            from jarvis.voice.activation.vosk_activation import VoskActivation
-            from jarvis.voice.audio import AudioUnavailableError
+        """Creation raises an informative ImportError when audio deps are absent."""
+        from jarvis.voice.activation.vosk_activation import VoskActivation
 
-            with pytest.raises((AudioUnavailableError, Exception)):
+        # None entries make `import vosk` / `import sounddevice` raise, so the
+        # missing-deps path is exercised even on machines that have them.
+        with patch.dict(sys.modules, {"vosk": None, "sounddevice": None}):
+            with pytest.raises(ImportError, match="pip install vosk sounddevice"):
                 VoskActivation(
                     wake_words=["test"],
                     model_path="/nonexistent/model",
                     on_wake_word=lambda: None,
                 )
-        except ImportError:
-            pytest.skip("Voice activation module not available")
 
     def test_voice_activation_stats(self):
-        """Test voice activation stats functionality."""
-        try:
-            from jarvis.voice.activation.vosk_activation import VoskActivation
-            from jarvis.voice.audio import AudioUnavailableError
+        """Stats report zeroed counters and normalized wake words before start."""
+        from jarvis.voice.activation.vosk_activation import VoskActivation
 
-            with pytest.raises((AudioUnavailableError, Exception)):
-                VoskActivation(
-                    wake_words=["test"],
-                    model_path="/nonexistent",
-                    on_wake_word=lambda: None,
-                )
-        except ImportError:
-            pytest.skip("Voice activation module not available")
+        with patch.dict(sys.modules, {"vosk": Mock(), "sounddevice": Mock()}):
+            va = VoskActivation(
+                wake_words=["Test", "JARVIS"],
+                model_path="/nonexistent",
+                on_wake_word=lambda: None,
+            )
+            stats = va.get_stats()
+
+        assert stats["detection_count"] == 0
+        assert stats["last_detection_time"] == 0.0
+        assert stats["is_listening"] is False
+        assert stats["wake_words"] == ["test", "jarvis"]
 
     def test_factory_function(self):
         """Test create_activation factory produces the right type."""
