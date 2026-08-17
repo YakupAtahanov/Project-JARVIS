@@ -190,7 +190,7 @@ class WindowsPlatform(BasePlatform):
 
     # -- Notifications -------------------------------------------------------
 
-    def has_desktop_notifications(self) -> bool:
+    def _detect_desktop_notifications(self) -> bool:
         # Interim fix for #169: this used to return True whenever
         # ctypes.windll existed (i.e. always, on every Windows install),
         # even though the actual notification below has no Allow/Deny

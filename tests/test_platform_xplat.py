@@ -1,4 +1,4 @@
-"""Tests for the xplat BasePlatform additions (Project-JARVIS #171/#173/#168/#169).
+"""Tests for the xplat BasePlatform additions (Project-JARVIS #171/#173/#168/#169/#174).
 
 ipc_verify_peer is exercised over a real socket for Linux (SO_PEERCRED) and
 for the Windows interim token mechanism (pure Python, so it can run here
@@ -144,3 +144,25 @@ class TestModelsDirNotCwdRelative:
 
         importlib.reload(config_module)
         assert os.path.isabs(config_module.Config.MODELS_DIR)
+
+
+class TestNotificationKillSwitch:
+    """JARVIS_DISABLE_NOTIFICATIONS beats backend detection on every platform (#174)."""
+
+    PLATFORMS = [LinuxPlatform, MacOSPlatform, WindowsPlatform]
+
+    @pytest.mark.parametrize("platform_cls", PLATFORMS)
+    def test_env_set_disables_even_with_backend_present(
+        self, platform_cls, monkeypatch
+    ):
+        p = platform_cls()
+        monkeypatch.setattr(p, "_detect_desktop_notifications", lambda: True)
+        monkeypatch.setenv("JARVIS_DISABLE_NOTIFICATIONS", "1")
+        assert p.has_desktop_notifications() is False
+
+    @pytest.mark.parametrize("platform_cls", PLATFORMS)
+    def test_env_absent_falls_through_to_detection(self, platform_cls, monkeypatch):
+        p = platform_cls()
+        monkeypatch.setattr(p, "_detect_desktop_notifications", lambda: True)
+        monkeypatch.delenv("JARVIS_DISABLE_NOTIFICATIONS", raising=False)
+        assert p.has_desktop_notifications() is True

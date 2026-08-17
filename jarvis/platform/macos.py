@@ -163,7 +163,7 @@ class MacOSPlatform(BasePlatform):
 
     # -- Notifications -------------------------------------------------------
 
-    def has_desktop_notifications(self) -> bool:
+    def _detect_desktop_notifications(self) -> bool:
         return shutil.which("osascript") is not None
 
     async def send_desktop_notification(

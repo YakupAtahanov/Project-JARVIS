@@ -9,6 +9,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+# The unit suite must never touch the desktop: on a machine with notify-send
+# (or another toast backend) installed, confirmation tests would otherwise pop
+# real Allow/Deny notifications — the cross-platform face of #174. The
+# platform layer honors this ahead of backend detection.
+os.environ["JARVIS_DISABLE_NOTIFICATIONS"] = "1"
+
 
 @pytest.fixture
 def temp_env_file():

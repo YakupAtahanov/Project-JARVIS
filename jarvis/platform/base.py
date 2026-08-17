@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -160,9 +161,24 @@ class BasePlatform(ABC):
 
     # -- Notifications -------------------------------------------------------
 
-    @abstractmethod
     def has_desktop_notifications(self) -> bool:
-        """Return True if desktop notifications are available."""
+        """Return True if desktop notifications are available.
+
+        JARVIS_DISABLE_NOTIFICATIONS wins over backend detection on every
+        platform — a headless or test environment must be able to keep the
+        desktop untouched no matter what is installed (#174).
+        """
+        if os.environ.get("JARVIS_DISABLE_NOTIFICATIONS", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return False
+        return self._detect_desktop_notifications()
+
+    @abstractmethod
+    def _detect_desktop_notifications(self) -> bool:
+        """Return True if this OS has a usable notification backend."""
 
     @abstractmethod
     async def send_desktop_notification(

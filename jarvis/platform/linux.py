@@ -191,7 +191,7 @@ class LinuxPlatform(BasePlatform):
 
     # -- Notifications -------------------------------------------------------
 
-    def has_desktop_notifications(self) -> bool:
+    def _detect_desktop_notifications(self) -> bool:
         return shutil.which("notify-send") is not None
 
     async def send_desktop_notification(
