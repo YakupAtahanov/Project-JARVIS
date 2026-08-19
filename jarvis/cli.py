@@ -123,7 +123,7 @@ def _format_age(created_at: float) -> str:
     return f"{int(delta // 3600)}h ago"
 
 
-def _cmd_confirmations() -> None:
+def _cmd_confirm() -> None:
     """List or resolve pending tool confirmations on a running JARVIS instance (#192)."""
     from .platform import current as platform
 
@@ -163,7 +163,7 @@ def _cmd_confirmations() -> None:
                     "id": confirmation_id,
                 }
         else:
-            _show_confirmations_usage()
+            _show_confirm_usage()
             sys.exit(1)
 
     path = _find_ipc_endpoint()
@@ -219,13 +219,13 @@ def _cmd_confirmations() -> None:
         sys.exit(1)
 
 
-def _show_confirmations_usage() -> None:
+def _show_confirm_usage() -> None:
     print("Usage:")
-    print("  jarvis confirmations                     # List pending, by goal/session")
-    print("  jarvis confirmations approve <id>        # Approve the whole batch")
-    print("  jarvis confirmations approve <id> 0,2    # Approve only items 0 and 2")
-    print("  jarvis confirmations deny <id>            # Deny the whole batch")
-    print("  jarvis confirmations approve-all          # Approve all pending")
+    print("  jarvis confirm                        # List pending, by goal/session")
+    print("  jarvis confirm approve <id>           # Approve the whole batch")
+    print("  jarvis confirm approve <id> 0,2       # Approve only items 0 and 2")
+    print("  jarvis confirm deny <id>              # Deny the whole batch")
+    print("  jarvis confirm approve-all            # Approve all pending")
 
 
 def set_output_mode(mode: str) -> None:
@@ -578,18 +578,17 @@ def show_usage() -> None:
     print("  jarvis sudo disable       # Disable sudo access (requires root)")
     print("  jarvis sudo               # Show current sudo access status")
     print()
-    print("Pending Confirmations:")
-    print()
     print("Standing Constraints:")
     print("  jarvis constrain <path> [desc]     # Add path-prefix deny constraint")
     print("  jarvis unconstrain <id>             # Remove constraint by id")
     print("  jarvis constraints                  # List active constraints")
     print()
     print("Pending Confirmations:")
-    print("  jarvis confirmations               # List pending confirmations")
-    print("  jarvis confirmations approve <id>  # Approve one")
-    print("  jarvis confirmations deny <id>      # Deny one")
-    print("  jarvis confirmations approve-all    # Approve all pending")
+    print("  jarvis confirm                        # List pending, by goal/session")
+    print("  jarvis confirm approve <id>           # Approve the whole batch")
+    print("  jarvis confirm approve <id> 0,2       # Approve only items 0 and 2")
+    print("  jarvis confirm deny <id>              # Deny the whole batch")
+    print("  jarvis confirm approve-all            # Approve all pending")
     print()
     print("Provider Pool:")
     print("  jarvis providers                                    # List providers")
@@ -733,8 +732,8 @@ def main() -> None:
             print("Usage: jarvis sudo [enable|disable]")
             sys.exit(1)
 
-    elif command == "confirmations":
-        _cmd_confirmations()
+    elif command == "confirm":
+        _cmd_confirm()
 
     elif command == "model":
         _legacy_redirect("jarvis model")

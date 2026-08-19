@@ -97,12 +97,20 @@ requests to the best available channel:
 3. **Socket** — JSON over output socket for external clients
 4. **CLI prompt** — stdin `[y/N]` fallback
 
-Pending confirmations are tracked in a persistent, queryable list
+Pending confirmations are tracked in a queryable list
 (`ConfirmationManager.list_pending()`), reviewable anytime via `jarvis
-confirmations` (CLI) or `list_confirmations`/`approve_confirmation`/
-`deny_confirmation`/`approve_all_confirmations` (GUI socket) rather than
-expiring on a clock. `CONFIRMATION_TIMEOUT` defaults to `0` (disabled);
-set it > 0 to restore auto-deny for unattended/headless setups.
+confirm` (CLI) or `list_confirmations`/`approve_confirmation`/
+`deny_confirmation`/`partial_approve_confirmation`/
+`approve_all_confirmations` (GUI socket) rather than expiring on a clock.
+`CONFIRMATION_TIMEOUT` defaults to `0` (disabled); set it > 0 to restore
+auto-deny for unattended/headless setups. **The list lives only in the
+daemon's memory** (`_pending`, no disk I/O): it outlives any single
+channel — dismissing a desktop toast is never a deny (#185) — but it does
+NOT survive a daemon restart, and it is not partitioned by session (each
+entry records a `session_id` for display only). On shutdown, goals are
+archived (#146) while the confirmations gating them are dropped silently;
+the held tasks were never dispatched, so this fails closed, but the
+request is lost. Tracked as a gap, not a design decision.
 
 ### Socket Security
 

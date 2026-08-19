@@ -1,5 +1,5 @@
 """
-Tests for the `jarvis confirmations` CLI (#192): age formatting, request
+Tests for the `jarvis confirm` CLI (#192): age formatting, request
 building (whole-batch vs per-index approve), and goal/session enrichment.
 """
 
@@ -44,25 +44,23 @@ class TestCmdConfirmationsRequestBuilding:
 
         monkeypatch.setattr(platform_pkg.current, "ipc_connect", lambda path: sock)
 
-        cli._cmd_confirmations()
+        cli._cmd_confirm()
         return sent["request"]
 
     def test_approve_whole_batch(self, monkeypatch):
-        req = self._run(monkeypatch, ["jarvis", "confirmations", "approve", "abc123"])
+        req = self._run(monkeypatch, ["jarvis", "confirm", "approve", "abc123"])
         assert req == {"type": "approve_confirmation", "id": "abc123"}
 
     def test_deny_whole_batch(self, monkeypatch):
-        req = self._run(monkeypatch, ["jarvis", "confirmations", "deny", "abc123"])
+        req = self._run(monkeypatch, ["jarvis", "confirm", "deny", "abc123"])
         assert req == {"type": "deny_confirmation", "id": "abc123"}
 
     def test_approve_all(self, monkeypatch):
-        req = self._run(monkeypatch, ["jarvis", "confirmations", "approve-all"])
+        req = self._run(monkeypatch, ["jarvis", "confirm", "approve-all"])
         assert req == {"type": "approve_all_confirmations"}
 
     def test_approve_partial_indices(self, monkeypatch):
-        req = self._run(
-            monkeypatch, ["jarvis", "confirmations", "approve", "abc123", "0,2"]
-        )
+        req = self._run(monkeypatch, ["jarvis", "confirm", "approve", "abc123", "0,2"])
         assert req == {
             "type": "partial_approve_confirmation",
             "id": "abc123",
@@ -71,17 +69,17 @@ class TestCmdConfirmationsRequestBuilding:
 
     def test_deny_with_indices_rejected(self, monkeypatch):
         monkeypatch.setattr(
-            cli.sys, "argv", ["jarvis", "confirmations", "deny", "abc123", "0,2"]
+            cli.sys, "argv", ["jarvis", "confirm", "deny", "abc123", "0,2"]
         )
         with pytest.raises(SystemExit):
-            cli._cmd_confirmations()
+            cli._cmd_confirm()
 
     def test_invalid_index_list_rejected(self, monkeypatch):
         monkeypatch.setattr(
-            cli.sys, "argv", ["jarvis", "confirmations", "approve", "abc123", "x,y"]
+            cli.sys, "argv", ["jarvis", "confirm", "approve", "abc123", "x,y"]
         )
         with pytest.raises(SystemExit):
-            cli._cmd_confirmations()
+            cli._cmd_confirm()
 
 
 class TestEnrichPendingWithGoals:

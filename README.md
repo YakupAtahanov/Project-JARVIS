@@ -270,7 +270,7 @@ jarvis
 | `jarvis history-reset` | Show current history reset setting |
 | `jarvis tui` | Interactive terminal UI with session sidebar (needs `[tui]` extra) |
 | `jarvis providers ...` | Manage the LLM provider failover pool (list/add/remove/move/edit) |
-| `jarvis confirmations [approve <id>\|deny <id>\|approve-all]` | List/resolve pending TLA tool confirmations |
+| `jarvis confirm [approve <id> [0,2]\|deny <id>\|approve-all]` | List/resolve pending TLA tool confirmations; the optional index list approves only those items of a batch |
 | `jarvis sudo [enable\|disable]` | Manage sudo access for privileged tools |
 | `jarvis auto-pull [on\|off]` | Auto-pull missing Ollama models |
 | `jarvis --help` | Show help message |

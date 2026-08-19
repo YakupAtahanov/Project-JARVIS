@@ -123,7 +123,7 @@ and a broken gate erodes trust in the whole mechanism.
 > means the desktop channel can never resolve a confirmation on Windows.
 > Since the confirmation-manager redesign (#185, `CONFIRMATION_TIMEOUT=0`
 > default) requests are **no longer silently denied** — they stay pending and
-> can be resolved via `jarvis confirmations` or the socket — but the broken
+> can be resolved via `jarvis confirm` or the socket — but the broken
 > channel still shadows the interactive prompt. One-line interim fix:
 > `has_desktop_notifications()` returns `False` on Windows until the real
 > WinRT toast lands.
