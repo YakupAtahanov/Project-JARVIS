@@ -760,19 +760,24 @@ async def dispatch_send(
 # (blender's execute_blender_code, the whole filesystem server) escaped
 # confirmation. Empty/failed reads are NOT cached, so a server installed
 # mid-session or a transient read failure is retried on the next dispatch.
-_THREAT_DECL_BY_SERVER: dict[str, dict[str, dict[str, Any]]] = {}
+_THREAT_DECL_BY_SERVER: dict[str, dict[str, Any]] = {}
 
 
 async def _server_threat_decls(
     app: Any, logger: Logger, server_id: str
-) -> Optional[dict[str, dict[str, Any]]]:
-    """Per-tool ``{threat_level, confirmation_required}`` map from the manifest.
+) -> Optional[dict[str, Any]]:
+    """``{"tier": str, "tools": {name: {threat_level, confirmation_required}}}``.
 
-    Read locally (``get_server_manifest`` — no network). Returns ``None`` when
-    the manifest cannot be read (missing, unreadable, or carries an ``error``);
-    the caller then falls back to today's host-floor + payload-scan gate. A
-    readable manifest is cached even when it declares nothing, so a genuinely
-    undeclared server is not re-read every dispatch.
+    Read locally (``get_server_manifest`` — no network). The tier is the
+    install-time ``trustStatus`` dmcp recorded from the registry entry;
+    anything unrecognizable — absent (connect-installed servers, pre-field
+    installs), blank, or non-string — reads as ``"unknown"``, and legacy
+    vocabulary (``vetted``/``unreviewed``) deliberately passes through
+    un-aliased so it lands in the unreviewed bucket until a reinstall
+    refreshes it. Returns ``None`` when the manifest cannot be read (missing,
+    unreadable, or carries an ``error``); the caller then floors the tool at
+    ELEVATED. A readable manifest is cached even when it declares nothing, so
+    a genuinely undeclared server is not re-read every dispatch.
     """
     cached = _THREAT_DECL_BY_SERVER.get(server_id)
     if cached is not None:
@@ -786,6 +791,12 @@ async def _server_threat_decls(
         return None
     if not isinstance(manifest, dict) or not manifest or "error" in manifest:
         return None
+    raw_tier = manifest.get("trustStatus")
+    tier = (
+        raw_tier.strip().lower()
+        if isinstance(raw_tier, str) and raw_tier.strip()
+        else "unknown"
+    )
     decls: dict[str, dict[str, Any]] = {}
     tools = manifest.get("tools")
     if isinstance(tools, list):
@@ -802,8 +813,9 @@ async def _server_threat_decls(
                 decl["confirmation_required"] = entry["confirmation_required"]
             if decl:
                 decls[name] = decl
-    _THREAT_DECL_BY_SERVER[server_id] = decls
-    return decls
+    info = {"tier": tier, "tools": decls}
+    _THREAT_DECL_BY_SERVER[server_id] = info
+    return info
 
 
 async def get_tool_metadata(
@@ -814,8 +826,15 @@ async def get_tool_metadata(
     The runtime ``tools/list`` view (name/description/inputSchema) is the base;
     the registry manifest's per-tool ``threat_level`` / ``confirmation_required``
     are merged on top so the TLA gate actually classifies from the author's
-    declaration. Additive only — a declaration never clobbers a field the
-    runtime tool legitimately provides.
+    declaration. For those two keys the MANIFEST is authoritative and
+    overwrites the runtime value: ``tools/list`` cannot legitimately carry
+    them (they are registry-manifest fields absent from protocol output), so a
+    runtime value is server-controlled injection and must not shadow the
+    reviewed declaration. The daemon also stamps ``registry_tier`` (the
+    install-time trust tier) and ``registry_declared`` (this tool has a
+    manifest declaration) unconditionally — server-scope provenance the
+    server's own output can never supply — which feed classify()'s tier floor
+    (#223): an unreviewed tool floors at ELEVATED.
     """
     server_id = task.get("server")
     tool_name = task.get("tool")
@@ -841,23 +860,28 @@ async def get_tool_metadata(
     # decorative declarations inert in the first place. A readable manifest that
     # does not declare this specific tool falls back the same way; with the
     # audit at 215/215 declared that is itself anomalous, so it warns too.
-    decls = await _server_threat_decls(app, logger, server_id)
-    if decls is None:
+    info = await _server_threat_decls(app, logger, server_id)
+    if info is None:
         logger.warning(
             f"JARVIS: no readable manifest for '{server_id}'; TLA cannot see its "
-            f"declared threat levels — falling back to host floor + payload scan "
-            f"for '{tool_name}'"
+            f"declared threat levels — '{tool_name}' floors at ELEVATED "
+            f"(unknown tier) on top of host floor + payload scan"
         )
+        meta["registry_tier"] = "unknown"
+        meta["registry_declared"] = False
         return meta
-    decl = decls.get(tool_name)
+    meta["registry_tier"] = info["tier"]
+    decl = info["tools"].get(tool_name)
+    meta["registry_declared"] = bool(decl)
     if not decl:
         logger.warning(
             f"JARVIS: '{server_id}/{tool_name}' declares no threat_level in its "
-            f"manifest — TLA gates it on host floor + payload scan only"
+            f"manifest — TLA floors it at ELEVATED on top of host floor + "
+            f"payload scan"
         )
         return meta
     for key in ("threat_level", "confirmation_required"):
-        if key in decl and key not in meta:
+        if key in decl:
             meta[key] = decl[key]
     return meta
 

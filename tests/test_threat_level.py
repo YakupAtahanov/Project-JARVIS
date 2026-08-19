@@ -225,3 +225,79 @@ class TestShouldConfirmFloor:
         _mode(monkeypatch, "allow_all")
         mgr = ConfirmationManager()
         assert mgr.should_confirm({}, tool_name="run_command") is False
+
+
+@pytest.mark.unit
+class TestTierFloor:
+    """The registry-tier floor (#223): a tool classifies below ELEVATED only
+    when its declaration passed the registry's gate — tier official/community
+    AND declared in the local manifest. Benign names and params throughout, so
+    the tier input is the only thing under test.
+    """
+
+    def test_metadata_without_tier_context_keeps_the_old_contract(self):
+        # Bare-metadata callers (non-dispatch paths) get no tier floor.
+        assert classify("web_search", {}) == ThreatLevel.SAFE
+
+    def test_community_declared_safe_lifts_the_floor(self):
+        meta = {
+            "registry_tier": "community",
+            "registry_declared": True,
+            "threat_level": "safe",
+        }
+        assert classify("web_search", meta) == ThreatLevel.SAFE
+
+    def test_community_undeclared_floors_elevated(self):
+        meta = {"registry_tier": "community", "registry_declared": False}
+        assert classify("web_search", meta) == ThreatLevel.ELEVATED
+
+    def test_official_undeclared_floors_elevated(self):
+        # Silence is silence, whatever the tier: a stale pre-audit local
+        # manifest on an official server still floors.
+        meta = {"registry_tier": "official", "registry_declared": False}
+        assert classify("web_search", meta) == ThreatLevel.ELEVATED
+
+    def test_official_declared_level_governs(self):
+        meta = {
+            "registry_tier": "official",
+            "registry_declared": True,
+            "threat_level": "dangerous",
+        }
+        assert classify("web_search", meta) == ThreatLevel.DANGEROUS
+
+    def test_unknown_tier_self_declared_safe_cannot_lift(self):
+        # A URL-installed server's manifest never passed any registry gate:
+        # its own "safe" must not classify it below ELEVATED.
+        meta = {
+            "registry_tier": "unknown",
+            "registry_declared": True,
+            "threat_level": "safe",
+        }
+        assert classify("web_search", meta) == ThreatLevel.ELEVATED
+
+    def test_unknown_tier_declaration_still_raises(self):
+        # Raise-only survives: an unreviewed declaration can raise, not lower.
+        meta = {
+            "registry_tier": "unknown",
+            "registry_declared": True,
+            "threat_level": "dangerous",
+        }
+        assert classify("web_search", meta) == ThreatLevel.DANGEROUS
+
+    def test_legacy_tier_vocabulary_is_the_unknown_bucket(self):
+        # "vetted"/"unreviewed" predate the two-tier scale; nothing maps them.
+        for legacy in ("vetted", "unreviewed"):
+            meta = {
+                "registry_tier": legacy,
+                "registry_declared": True,
+                "threat_level": "safe",
+            }
+            assert classify("web_search", meta) == ThreatLevel.ELEVATED
+
+    def test_tier_floor_never_lowers_the_host_floor(self):
+        meta = {
+            "registry_tier": "official",
+            "registry_declared": True,
+            "threat_level": "safe",
+        }
+        assert classify("run_command", meta) == ThreatLevel.DANGEROUS

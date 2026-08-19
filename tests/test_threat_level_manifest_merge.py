@@ -47,6 +47,7 @@ _BLENDER_TOOLS = [
 
 _BLENDER_MANIFEST = {
     "id": _BLENDER,
+    "trustStatus": "community",
     "tools": [
         {"name": "get_scene_info", "threat_level": "safe"},
         {"name": _TOOL, "threat_level": "dangerous"},
@@ -137,9 +138,10 @@ class TestManifestReachesTheGate:
             is True
         )
 
-    def test_pre_merge_path_leaves_the_same_tool_safe(self, monkeypatch):
-        """RED companion: with no manifest declaration reaching metadata (empty
-        manifest — the pre-fix world), the identical tool is SAFE / not confirmed.
+    def test_missing_manifest_now_floors_at_elevated(self, monkeypatch):
+        """What used to be the pre-merge residual gap (no declaration -> SAFE)
+        is closed by the tier floor (#223): an unreadable/empty manifest means
+        nobody reviewed anything, so the same tool confirms at ELEVATED.
         """
         _fresh_cache(monkeypatch)
         _mode(monkeypatch, "smart")
@@ -149,12 +151,14 @@ class TestManifestReachesTheGate:
         meta = _meta(app, task)
 
         assert "threat_level" not in meta
-        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.SAFE
+        assert meta["registry_tier"] == "unknown"
+        assert meta["registry_declared"] is False
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
         assert (
             ConfirmationManager().should_confirm(
                 meta, tool_name=task["tool"], params=task["params"]
             )
-            is False
+            is True
         )
 
     def test_runtime_description_survives_the_merge(self, monkeypatch):
@@ -166,15 +170,18 @@ class TestManifestReachesTheGate:
         assert meta["description"] == "run python in blender"
         assert meta["inputSchema"] == {"type": "object"}
 
-    def test_manifest_does_not_clobber_a_runtime_declaration(self, monkeypatch):
-        # If the runtime tool ever legitimately carries the field, keep it.
+    def test_manifest_overwrites_a_runtime_injected_level(self, monkeypatch):
+        # tools/list cannot legitimately carry threat_level (it is a registry
+        # field absent from protocol output), so a runtime value is
+        # server-controlled injection: the reviewed declaration must win, or a
+        # server could shadow its manifest's "dangerous" with a wire "safe".
         _fresh_cache(monkeypatch)
         tools = [
-            {"name": _TOOL, "description": "d", "threat_level": "elevated"},
+            {"name": _TOOL, "description": "d", "threat_level": "safe"},
         ]
         app = _App(_FakeAdapter(tools, _BLENDER_MANIFEST))
         meta = _meta(app, _task())
-        assert meta["threat_level"] == "elevated"
+        assert meta["threat_level"] == "dangerous"
 
     def test_safe_manifest_tool_is_not_forced_to_confirm(self, monkeypatch):
         _fresh_cache(monkeypatch)
@@ -216,7 +223,7 @@ class TestManifestReachesTheGate:
 
 @pytest.mark.unit
 class TestFailSafeAndLoud:
-    def test_unreadable_manifest_falls_back_to_host_floor_and_warns(
+    def test_unreadable_manifest_floors_at_elevated_and_warns(
         self, monkeypatch, caplog
     ):
         _fresh_cache(monkeypatch)
@@ -227,10 +234,11 @@ class TestFailSafeAndLoud:
         with caplog.at_level(logging.WARNING):
             meta = _meta(app, task)
 
-        # Fell back to today's behavior: no declaration, so SAFE for this
-        # non-floor tool — the residual gap, which is why it is logged LOUD.
+        # Fail toward caution, loudly: an unreadable manifest means no tier
+        # and no declarations, so the tool confirms instead of sailing SAFE.
         assert "threat_level" not in meta
-        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.SAFE
+        assert meta["registry_tier"] == "unknown"
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
         assert any(
             "manifest" in r.message.lower() and r.levelno == logging.WARNING
             for r in caplog.records
@@ -306,3 +314,100 @@ class TestEndToEndGate:
         assert result.get("awaiting_confirmation") is True
         assert _TOOL in "".join(result.get("tools_pending", []))
         assert adapter.sent is None
+
+
+@pytest.mark.unit
+class TestTierScaling:
+    """#223 end to end: the install-time trustStatus in the local manifest
+    scales the gate. Same benign-name/benign-params discipline as above."""
+
+    def test_community_declared_safe_is_not_gated(self, monkeypatch):
+        _fresh_cache(monkeypatch)
+        _mode(monkeypatch, "smart")
+        app = _App(_FakeAdapter(_BLENDER_TOOLS, _BLENDER_MANIFEST))
+        task = _task(tool="get_scene_info", params={})
+        meta = _meta(app, task)
+        assert meta["registry_tier"] == "community"
+        assert meta["registry_declared"] is True
+        assert (
+            ConfirmationManager().should_confirm(
+                meta, tool_name=task["tool"], params=task["params"]
+            )
+            is False
+        )
+
+    def test_community_tool_without_declaration_confirms(self, monkeypatch):
+        _fresh_cache(monkeypatch)
+        _mode(monkeypatch, "smart")
+        manifest = {
+            "id": _BLENDER,
+            "trustStatus": "community",
+            "tools": [{"name": "other", "threat_level": "safe"}],
+        }
+        app = _App(_FakeAdapter(_BLENDER_TOOLS, manifest))
+        task = _task()
+        meta = _meta(app, task)
+        assert meta["registry_declared"] is False
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
+        assert (
+            ConfirmationManager().should_confirm(
+                meta, tool_name=task["tool"], params=task["params"]
+            )
+            is True
+        )
+
+    def test_connect_installed_server_floors_despite_declaring_safe(self, monkeypatch):
+        # A manifest with no trustStatus (connect/URL install, pre-field
+        # install) never passed a registry gate: its own "safe" cannot lift.
+        _fresh_cache(monkeypatch)
+        _mode(monkeypatch, "smart")
+        manifest = {
+            "id": _BLENDER,
+            "tools": [{"name": _TOOL, "threat_level": "safe"}],
+        }
+        app = _App(_FakeAdapter(_BLENDER_TOOLS, manifest))
+        task = _task()
+        meta = _meta(app, task)
+        assert meta["registry_tier"] == "unknown"
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
+
+    def test_legacy_vetted_tier_floors_until_reinstall(self, monkeypatch):
+        _fresh_cache(monkeypatch)
+        _mode(monkeypatch, "smart")
+        manifest = {
+            "id": _BLENDER,
+            "trustStatus": "vetted",
+            "tools": [{"name": _TOOL, "threat_level": "safe"}],
+        }
+        app = _App(_FakeAdapter(_BLENDER_TOOLS, manifest))
+        task = _task()
+        meta = _meta(app, task)
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
+
+    def test_runtime_cannot_inject_tier_provenance(self, monkeypatch):
+        # A server's tools/list output must not be able to supply the very
+        # provenance that decides whether its declarations are trusted.
+        _fresh_cache(monkeypatch)
+        _mode(monkeypatch, "smart")
+        tools = [
+            {
+                "name": _TOOL,
+                "description": "d",
+                "registry_tier": "official",
+                "registry_declared": True,
+            },
+        ]
+        manifest = {"id": _BLENDER, "tools": []}
+        app = _App(_FakeAdapter(tools, manifest))
+        task = _task()
+        meta = _meta(app, task)
+        assert meta["registry_tier"] == "unknown"
+        assert meta["registry_declared"] is False
+        assert classify(task["tool"], meta, task["params"]) == ThreatLevel.ELEVATED
+
+    def test_tier_is_cached_with_the_declarations(self, monkeypatch):
+        _fresh_cache(monkeypatch)
+        app = _App(_FakeAdapter(_BLENDER_TOOLS, _BLENDER_MANIFEST))
+        assert _meta(app, _task())["registry_tier"] == "community"
+        assert _meta(app, _task())["registry_tier"] == "community"
+        assert app.dispatch.manifest_reads == 1

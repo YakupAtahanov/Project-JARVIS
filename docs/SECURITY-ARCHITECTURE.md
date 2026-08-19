@@ -199,10 +199,16 @@ LLM interprets as a user command and routes to a shell server.
 - `CONFIRMATION_MODE=smart` (default) — the host assigns a minimum threat
   level to every tool call: `classify()` = max(host floor for
   command-execution tools, manifest-declared level, dangerous-payload scan of
-  params), and anything >= ELEVATED is blocked pending user confirmation.
-  A tool author cannot opt out of gating a dangerous tool — the former
-  bundled-shell-server gap (#159/#162) is closed by the host floor in
-  `jarvis/core/threat_level.py`.
+  params, registry-tier floor), and anything >= ELEVATED is blocked pending
+  user confirmation. A tool author cannot opt out of gating a dangerous tool —
+  the former bundled-shell-server gap (#159/#162) is closed by the host floor
+  in `jarvis/core/threat_level.py`. The tier floor (#223) closes the
+  unknown-name gap the other way: a tool classifies below ELEVATED only when
+  its declaration passed the registry's gate (install-time tier `official` or
+  `community` AND declared in the local manifest), so a server nobody reviewed
+  — URL install, unreadable manifest, legacy tier vocabulary — cannot
+  self-declare its way past confirmation. All four inputs raise only; a
+  registry outage can therefore add prompts but never remove one.
 - `jarvis/core/threat_level.py` — scans dispatched tool *parameters* for
   dangerous payloads (sudo, `rm -rf`, pipe-to-shell, …) and raises the
   confirmation threat level accordingly. (There is no scanner on direct user
@@ -307,6 +313,8 @@ vulnerabilities.
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-17:* Threat 3/#223 — the registry trust tier now scales the TLA gate. `classify()` gains a fourth raise-only input: the dispatch path stamps `registry_tier` (the install-time `trustStatus` dmcp records in the local manifest — dmcp normalizes it at install and stamps `unknown` on URL/connect installs, closing a spoofing hole where a fetched manifest's self-declared tier persisted verbatim) and `registry_declared` (this tool has a manifest declaration), and `_tier_floor` returns ELEVATED unless the tier is `official`/`community` AND the tool is declared — so the measured 193-of-215-unconfirmed gap is closed by review-backed declarations rather than a longer name allowlist, and an unreviewed server cannot self-declare `safe`. Legacy tiers (`vetted`/`unreviewed`) deliberately land in the unknown bucket until a reinstall refreshes them. In the same pass the declaration merge became authoritative for `threat_level`/`confirmation_required`: `tools/list` cannot legitimately carry them, so a runtime value is server-controlled injection and no longer shadows the reviewed declaration (this supersedes the 2026-08-07 "never clobbers" wording below). Fail-toward-caution replaces fail-open: an unreadable manifest now floors the tool at ELEVATED instead of falling back to host floor + payload scan, still logged loud. Verified red-then-green in `tests/test_threat_level_manifest_merge.py` + `tests/test_threat_level.py` (13 fail against the unfixed gate) and against real installed manifests on a live box. Bare-metadata callers are unchanged — the caution default lives in the dispatch plumbing, not in `classify()`'s handling of absent metadata.
 
 *2026-08-15:* claims-audit pass against the code, two corrections. (1) The persistent constraint register is no longer "planned": `jarvis/core/constraint_store.py` (#214) shipped — path-prefix deny rules persisted at `$JARVIS_DATA_DIR/constraints.json` with atomic writes, enforced mechanically at `dispatch_flow._check_constraints()` **before** the confirmation gate (so `CONFIRMATION_MODE=allow_all` cannot bypass it), re-injected into every ROOT prompt by `root_context.py`, and user-managed via `jarvis constrain`/`unconstrain`/`constraints`. Threat 6's row and status now say so; the face stays open for constraints that are not path-prefix deny rules, and generalizing the register is the open item. (2) The same-user socket section cited `verify_socket_ownership()` as the pre-connect ownership check, but that wrapper has zero callers — the live check is `platform.ipc_verify_owner()` called directly from `jarvis/cli.py`. The citation now names the code that actually runs (fifth instance of docs citing a dead path — grep for callers before citing).
 

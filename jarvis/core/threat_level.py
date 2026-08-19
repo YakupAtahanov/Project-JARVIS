@@ -16,6 +16,16 @@ Beyond tool identity, the *parameters* are scanned for dangerous payloads
 argument is raised too. This is raise-only and complements the identity floor;
 it never lowers a level (Project-JARVIS #162).
 
+The fourth input is the *registry tier* (#223): the dispatch path stamps the
+server's install-time trust tier (``registry_tier``) and whether the local
+manifest declares this tool (``registry_declared``) into the metadata, and a
+tool floors at ELEVATED unless its declaration passed the registry's gate —
+tier ``official``/``community`` AND manifest-declared. A server nobody
+reviewed (URL install, unreadable manifest, legacy tier vocabulary) cannot
+lower itself below ELEVATED by self-declaring ``safe``. Metadata WITHOUT the
+``registry_tier`` key is out-of-dispatch context and gets no tier floor, so
+bare-metadata callers keep their contract. Raise-only like every other input.
+
 The four tiers mirror the kernel policy engine's vocabulary so the userspace
 gate and the OS embodiment speak the same language.
 """
@@ -82,6 +92,27 @@ def _declared(tool_metadata: Dict[str, Any]) -> ThreatLevel:
     return ThreatLevel.SAFE
 
 
+# Tiers whose per-tool declarations passed the registry's PR gate (validator
+# requires a threat_level on every tool of a live entry; promotions and
+# revocation-lifts need the maintainer label). Everything else — "unknown",
+# legacy "vetted"/"unreviewed", a revoked tier, a missing value — never had a
+# reviewed declaration, so nothing it says can lift the floor.
+_GATED_TIERS = frozenset({"official", "community"})
+
+
+def _tier_floor(tool_metadata: Dict[str, Any]) -> ThreatLevel:
+    if "registry_tier" not in tool_metadata:
+        # No tier context (bare-metadata callers, non-dispatch paths): the
+        # caution default lives in the dispatch plumbing that stamps the key,
+        # not here — classify() with empty metadata must stay SAFE for benign
+        # tools or every out-of-dispatch confirmation check would gate.
+        return ThreatLevel.SAFE
+    tier = str(tool_metadata.get("registry_tier") or "").strip().lower()
+    if tier in _GATED_TIERS and tool_metadata.get("registry_declared"):
+        return ThreatLevel.SAFE
+    return ThreatLevel.ELEVATED
+
+
 # Substrings in tool *parameters* that mark a payload as dangerous regardless
 # of which tool carries it: a host-"safe" tool (an HTTP fetch, a file writer)
 # handed one of these is doing something destructive or escalating. Deliberately
@@ -129,12 +160,15 @@ def classify(
     tool_metadata: Optional[Dict[str, Any]] = None,
     params: Any = None,
 ) -> ThreatLevel:
-    """Effective threat level = ``max(host floor, manifest, payload)``.
+    """Effective threat level = ``max(host floor, manifest, payload, tier)``.
 
     The manifest may raise a tool's level but can never lower it below the host
     floor, and a dangerous *payload* raises the level even for a host-safe tool
     — so neither a permissive manifest nor a benign tool identity can hide a
-    destructive parameter.
+    destructive parameter. The registry-tier floor (#223) raises an unreviewed
+    tool to ELEVATED: only a declaration that passed the registry's gate
+    (tier ``official``/``community``) classifies below that. All four inputs
+    raise only; none can lower another.
     """
     metadata = tool_metadata or {}
     return ThreatLevel(
@@ -142,5 +176,6 @@ def classify(
             int(_host_floor(tool_name)),
             int(_declared(metadata)),
             int(_payload_floor(params)),
+            int(_tier_floor(metadata)),
         )
     )
