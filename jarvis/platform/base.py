@@ -111,53 +111,11 @@ class BasePlatform(ABC):
 
     @abstractmethod
     def privileged_prefixes(self) -> tuple[str, ...]:
-        """Command prefixes that require elevation on this OS."""
+        """Command prefixes that require elevation on this OS.
 
-    @abstractmethod
-    def askpass_helpers(self) -> tuple[str, ...]:
-        """Candidate GUI askpass helper binaries to probe, in priority order."""
-
-    def find_askpass(self) -> Optional[str]:
-        """Return the first available askpass helper, or None."""
-        for helper in self.askpass_helpers():
-            found = shutil.which(helper) or (helper if Path(helper).is_file() else None)
-            if found:
-                return found
-        return None
-
-    @abstractmethod
-    def elevate(self, command: str) -> str:
-        """Wrap *command* so it runs elevated via the GUI credential boundary.
-
-        The GUI prompt (askpass dialog / osascript "with administrator
-        privileges") is the security boundary on every OS — never silent,
-        never NOPASSWD. Raises ``RuntimeError`` if no elevation mechanism
-        is available on this platform (caller should surface that instead
-        of running the command unprivileged).
+        Fed into the TLA gate as a floor (``jarvis/core/threat_level.py``)
+        rather than used for elevation directly — see Project-JARVIS #208.
         """
-
-    @abstractmethod
-    def grant_privilege(self) -> bool:
-        """Persistently grant the current user elevation rights (e.g. sudo).
-
-        Returns True on success. Platforms without a persistent-grant concept
-        (Windows: elevation is per-action via UAC, not a standing grant)
-        return False.
-        """
-
-    @abstractmethod
-    def revoke_privilege(self) -> bool:
-        """Revoke a grant made by ``grant_privilege``. Returns True on success."""
-
-    @abstractmethod
-    def is_privilege_granted(self) -> bool:
-        """Return True if ``grant_privilege`` is currently in effect."""
-
-    # -- App opening -----------------------------------------------------------
-
-    @abstractmethod
-    def open_command(self, target: str) -> list[str]:
-        """Return the argv that opens *target* (file/URL/app) on this OS."""
 
     # -- Notifications -------------------------------------------------------
 

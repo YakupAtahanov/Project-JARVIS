@@ -161,33 +161,6 @@ class WindowsPlatform(BasePlatform):
             "diskpart",
         )
 
-    def askpass_helpers(self) -> tuple[str, ...]:
-        # Windows elevation is a UAC consent prompt, not a CLI askpass
-        # helper — there is nothing to probe for here.
-        return ()
-
-    def elevate(self, command: str) -> str:
-        raise RuntimeError(
-            "Windows elevation is not implemented as a command-line wrapper. "
-            "Each privileged action needs its own UAC consent prompt "
-            "(e.g. via ShellExecuteEx with lpVerb='runas'), not a `sudo`-style "
-            "prefix — see Project-JARVIS #173/#171 for the tracked follow-up."
-        )
-
-    def grant_privilege(self) -> bool:
-        # No standing-grant concept on Windows: administrator rights come
-        # from group membership + a fresh UAC prompt per elevated action.
-        return False
-
-    def revoke_privilege(self) -> bool:
-        return False
-
-    def is_privilege_granted(self) -> bool:
-        return False
-
-    def open_command(self, target: str) -> list[str]:
-        return ["cmd", "/c", "start", "", target]
-
     # -- Notifications -------------------------------------------------------
 
     def _detect_desktop_notifications(self) -> bool:

@@ -26,13 +26,25 @@ lower itself below ELEVATED by self-declaring ``safe``. Metadata WITHOUT the
 ``registry_tier`` key is out-of-dispatch context and gets no tier floor, so
 bare-metadata callers keep their contract. Raise-only like every other input.
 
-The four tiers mirror the kernel policy engine's vocabulary so the userspace
-gate and the OS embodiment speak the same language.
+The fifth input is the *privileged-command* floor (#208): each platform's
+``privileged_prefixes()`` (``pacman``, ``systemctl stop``, ``useradd``, …) is
+scanned against the params the same way the payload patterns are. It exists
+for the gap the other floors miss — a tool with a command-ish parameter but a
+name outside ``HOST_DANGEROUS_TOOLS`` (so the identity floor stays SAFE) whose
+argument doesn't match the payload regexes (``sudo``, ``rm -rf``, …) either.
+Under the dmcp scope model, elevation itself is decided by scope, not by
+inspecting the command — so this floor is TLA signal only, not a mechanism.
+Raise-only, to ELEVATED.
+
+The four ThreatLevel tiers mirror the kernel policy engine's vocabulary so
+the userspace gate and the OS embodiment speak the same language.
 """
 
 import re
 from enum import IntEnum
 from typing import Any, Dict, Optional
+
+from jarvis import platform as _platform
 
 
 class ThreatLevel(IntEnum):
@@ -155,20 +167,49 @@ def _payload_floor(params: Any) -> ThreatLevel:
     return ThreatLevel.SAFE
 
 
+_PRIVILEGED_PATTERN_CACHE: Dict[tuple, tuple] = {}
+
+
+def _privileged_patterns(prefixes: tuple) -> tuple:
+    cached = _PRIVILEGED_PATTERN_CACHE.get(prefixes)
+    if cached is None:
+        cached = tuple(
+            re.compile(rf"(?:^|[;&|\n]\s*){re.escape(prefix)}\b", re.IGNORECASE)
+            for prefix in prefixes
+        )
+        _PRIVILEGED_PATTERN_CACHE[prefixes] = cached
+    return cached
+
+
+def _privileged_floor(params: Any) -> ThreatLevel:
+    if not params:
+        return ThreatLevel.SAFE
+    prefixes = _platform.current.privileged_prefixes()
+    if not prefixes:
+        return ThreatLevel.SAFE
+    patterns = _privileged_patterns(prefixes)
+    for text in _iter_strings(params):
+        if any(pattern.search(text) for pattern in patterns):
+            return ThreatLevel.ELEVATED
+    return ThreatLevel.SAFE
+
+
 def classify(
     tool_name: Optional[str],
     tool_metadata: Optional[Dict[str, Any]] = None,
     params: Any = None,
 ) -> ThreatLevel:
-    """Effective threat level = ``max(host floor, manifest, payload, tier)``.
+    """Effective threat level = ``max(host, manifest, payload, tier, privileged)``.
 
     The manifest may raise a tool's level but can never lower it below the host
     floor, and a dangerous *payload* raises the level even for a host-safe tool
     — so neither a permissive manifest nor a benign tool identity can hide a
     destructive parameter. The registry-tier floor (#223) raises an unreviewed
     tool to ELEVATED: only a declaration that passed the registry's gate
-    (tier ``official``/``community``) classifies below that. All four inputs
-    raise only; none can lower another.
+    (tier ``official``/``community``) classifies below that. The privileged-
+    command floor (#208) raises to ELEVATED when a param matches this OS's
+    ``privileged_prefixes()`` table, covering command-ish params on tools the
+    other floors miss. All five inputs raise only; none can lower another.
     """
     metadata = tool_metadata or {}
     return ThreatLevel(
@@ -177,5 +218,6 @@ def classify(
             int(_declared(metadata)),
             int(_payload_floor(params)),
             int(_tier_floor(metadata)),
+            int(_privileged_floor(params)),
         )
     )

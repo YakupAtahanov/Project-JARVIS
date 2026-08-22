@@ -146,13 +146,21 @@ the ROOT prompt rule says never to prefix `sudo`. The password prompt is
 polkit's, raised by dmcp's re-exec, and it is deliberately outside this
 daemon's reach (a flag JARVIS could write would be a self-escalation path).
 
-`BasePlatform` still carries a `sudo -A` askpass surface from the bundled
-shell server that was retired in `357aeca` — `find_askpass()`,
+`BasePlatform` no longer carries the `sudo -A` askpass surface from the
+bundled shell server retired in `357aeca` — `find_askpass()`,
 `askpass_helpers()`, `elevate()`, `grant_privilege()`/`revoke_privilege()`/
-`is_privilege_granted()`, `privileged_prefixes()`, `open_command()`. **None of
-these has a caller outside `jarvis/platform/` today** (verified by grep,
-including tests). They are retained per-OS scaffolding, not a live mechanism;
-do not describe them as the boundary. See #208 for the wire-or-drop decision.
+`is_privilege_granted()`, `open_command()` were removed (#208): zero callers
+outside `jarvis/platform/`, verified by grep including tests. `jarvis sudo`
+calls `core/sudo_manager.py` directly and never went through these.
+
+`privileged_prefixes()` (the per-OS root-implying command-prefix table) is
+kept, but not as an elevation mechanism — under the dmcp scope model,
+elevation is decided by scope, not by inspecting the command (see below). It
+is now the fifth input to `jarvis/core/threat_level.py:classify()`: a
+raise-only floor to ELEVATED when a tool's parameters contain a privileged
+command prefix, covering tools with a command-ish parameter but a non-shell
+tool name (where `HOST_DANGEROUS_TOOLS` and the payload regexes both miss —
+resolved per #208).
 
 The IPC half of the platform layer *is* live: `ipc_verify_peer()` (accept-time
 peer credential check, `runtime/io.py`) and `system_ipc_candidates()`

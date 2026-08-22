@@ -330,7 +330,7 @@ Added in v1.0.0. Auto-detects OS at import time.
 | File | Role |
 |------|------|
 | `__init__.py` | `current` singleton — `LinuxPlatform`, `MacOSPlatform`, or `WindowsPlatform` |
-| `base.py` | `BasePlatform` ABC: `create_ipc_server`, `ipc_connect`, `ipc_secure`, `ipc_verify_owner`, `ipc_verify_peer`, `ipc_cleanup`, `system_ipc_candidates`, `config_dir`, `data_dir`, `sidecar_search_dirs`/`resolve_sidecar`, `privileged_prefixes`, `askpass_helpers`/`find_askpass`/`elevate`, `grant_privilege`/`revoke_privilege`/`is_privilege_granted`, `open_command`, `send_desktop_notification`, `has_desktop_notifications`, `try_start_service`, `install_signal_handlers` |
+| `base.py` | `BasePlatform` ABC: `create_ipc_server`, `ipc_connect`, `ipc_secure`, `ipc_verify_owner`, `ipc_verify_peer`, `ipc_cleanup`, `system_ipc_candidates`, `config_dir`, `data_dir`, `sidecar_search_dirs`/`resolve_sidecar`, `privileged_prefixes` (feeds the TLA gate, #208), `send_desktop_notification`, `has_desktop_notifications`, `try_start_service`, `install_signal_handlers` |
 | `linux.py` | `AF_UNIX` + `SO_PEERCRED` peer check, XDG paths, `notify-send`, `systemctl`, `sudo -A` with a five-candidate askpass probe |
 | `macos.py` | `AF_UNIX` + `LOCAL_PEERCRED` peer check, `~/Library/Application Support/`, `osascript` (dialogs + an auto-installed askpass shim), `launchctl` |
 | `windows.py` | TCP `127.0.0.1` + port lockfile, per-startup `.token` file auth (`icacls`-restricted) checked accept-time, `%APPDATA%`/`%LOCALAPPDATA%`, `windows_toasts` WinRT toast with real Allow/Deny buttons (availability gated on the package importing), UAC-only elevation, direct spawn |

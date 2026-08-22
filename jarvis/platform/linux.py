@@ -153,42 +153,6 @@ class LinuxPlatform(BasePlatform):
             "tee /var",
         )
 
-    def askpass_helpers(self) -> tuple[str, ...]:
-        return (
-            "/usr/bin/ksshaskpass",
-            "/usr/lib/ssh/ksshaskpass",
-            "ssh-askpass",
-            "lxqt-openssh-askpass",
-            "x11-ssh-askpass",
-        )
-
-    def elevate(self, command: str) -> str:
-        if not self.find_askpass():
-            raise RuntimeError(
-                "No GUI askpass helper found (tried: "
-                f"{', '.join(self.askpass_helpers())}). Install one of these "
-                "to allow privileged commands to prompt via a GUI dialog."
-            )
-        return f"sudo -A {command}"
-
-    def grant_privilege(self) -> bool:
-        from ..core import sudo_manager
-
-        return sudo_manager.enable_sudo()
-
-    def revoke_privilege(self) -> bool:
-        from ..core import sudo_manager
-
-        return sudo_manager.disable_sudo()
-
-    def is_privilege_granted(self) -> bool:
-        from ..core import sudo_manager
-
-        return sudo_manager.is_sudo_enabled()
-
-    def open_command(self, target: str) -> list[str]:
-        return ["xdg-open", target]
-
     # -- Notifications -------------------------------------------------------
 
     def _detect_desktop_notifications(self) -> bool:

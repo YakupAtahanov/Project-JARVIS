@@ -132,35 +132,6 @@ class MacOSPlatform(BasePlatform):
             "tee /Library",
         )
 
-    def askpass_helpers(self) -> tuple[str, ...]:
-        # macOS ships no CLI askpass helper; the shim script below wraps
-        # osascript's GUI password dialog to present the same interface.
-        return ("/usr/local/libexec/jarvis-osascript-askpass",)
-
-    def find_askpass(self) -> Optional[str]:
-        shim = _ensure_osascript_askpass_shim()
-        return shim if shim else None
-
-    def elevate(self, command: str) -> str:
-        if not self.find_askpass():
-            raise RuntimeError("Could not install the osascript askpass shim.")
-        return f"sudo -A {command}"
-
-    def grant_privilege(self) -> bool:
-        # No jarvis-managed sudoers.d toggle on macOS yet; `sudo -A` already
-        # prompts via the osascript askpass shim on every privileged call,
-        # so there is nothing additional to persistently grant.
-        return False
-
-    def revoke_privilege(self) -> bool:
-        return False
-
-    def is_privilege_granted(self) -> bool:
-        return False
-
-    def open_command(self, target: str) -> list[str]:
-        return ["open", target]
-
     # -- Notifications -------------------------------------------------------
 
     def _detect_desktop_notifications(self) -> bool:
@@ -222,39 +193,3 @@ def _is_service_up(base_url: str) -> bool:
 def _applescript_quote(text: str) -> str:
     """Escape a string for embedding in a double-quoted AppleScript literal."""
     return text.replace("\\", "\\\\").replace('"', '\\"')
-
-
-_ASKPASS_SHIM_PATH = Path("/usr/local/libexec/jarvis-osascript-askpass")
-
-_ASKPASS_SHIM_SCRIPT = """#!/bin/sh
-# Installed by JARVIS (jarvis/platform/macos.py). Bridges SUDO_ASKPASS to a
-# GUI credential prompt via osascript, mirroring ksshaskpass on Linux — the
-# GUI dialog is the elevation security boundary, never a silent NOPASSWD.
-exec osascript -e 'Tell application "System Events" to display dialog \\
-  "sudo needs your password:" default answer "" with hidden answer \\
-  buttons {"Cancel", "OK"} default button "OK"' \\
-  -e 'text returned of result'
-"""
-
-
-def _ensure_osascript_askpass_shim() -> Optional[str]:
-    """Install the askpass shim script if missing/stale, return its path.
-
-    Best-effort: requires write access to /usr/local/libexec (root, or a
-    directory the current user owns). Returns None if it can't be written —
-    callers fall back to failing the elevation attempt loudly rather than
-    silently running unprivileged.
-    """
-    try:
-        if (
-            _ASKPASS_SHIM_PATH.is_file()
-            and _ASKPASS_SHIM_PATH.read_text() == _ASKPASS_SHIM_SCRIPT
-            and os.access(_ASKPASS_SHIM_PATH, os.X_OK)
-        ):
-            return str(_ASKPASS_SHIM_PATH)
-        _ASKPASS_SHIM_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _ASKPASS_SHIM_PATH.write_text(_ASKPASS_SHIM_SCRIPT)
-        _ASKPASS_SHIM_PATH.chmod(0o755)
-        return str(_ASKPASS_SHIM_PATH)
-    except OSError:
-        return None

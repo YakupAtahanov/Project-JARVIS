@@ -209,9 +209,15 @@ interface. Above the interface, nothing branches on OS.
 |---|---|---|
 | `ipc_verify_peer(sock) -> bool` | accept-time peer check (replaces the `verify_owner` file check for connection auth) | Linux `SO_PEERCRED`; macOS `LOCAL_PEERCRED`; Windows pipe client PID/session or token |
 | `resolve_sidecar(name) -> str\|None` | find `dispatch`/`dmcp`/`contextor` | `Config` override → `shutil.which` (handles `.exe`/PATHEXT) → per-OS install dirs |
-| `grant_privilege()` / `revoke()` / `is_granted()` | the `jarvis sudo` mechanism | Linux/macOS sudoers.d; Windows Administrators-group or "unsupported" |
-| `elevate(cmd)` | run one command elevated | Linux pkexec; macOS `osascript … with administrator privileges`/sudo; Windows `runas` |
 | `system_ipc_candidates()` | endpoint discovery list | Linux `['/run/jarvis/…']`; macOS/Windows `[]` |
+| `privileged_prefixes()` | command-prefix signal for the TLA gate (`threat_level.py`), not an elevation mechanism | Linux/macOS/Windows, per-OS table |
+
+`grant_privilege()`/`revoke_privilege()`/`is_privilege_granted()`/`elevate(cmd)`/
+`askpass_helpers()`/`find_askpass()`/`open_command()` were removed (#208): zero
+callers outside `jarvis/platform/` after `shellmcp` retired in `357aeca`.
+Elevation runs through dmcp's pkexec/polkit scope model instead — see
+`CLAUDE.md`'s Sudo Management section. `jarvis sudo` calls
+`core/sudo_manager.py` directly, not through the platform layer.
 
 Kernel (`/dev/jarvis`) and sudoers packaging stay **out** of the abstraction —
 they are OS-embodiment features, gated, not ported.
@@ -287,8 +293,8 @@ today. The concrete list:
 2. **dmcp on macOS** (compiles today via `nix`): system-scope paths →
    `/Library/Application Support/mcp` (not SIP-sealed `/usr/share`, B9); elevation
    → `sudo` re-exec when a TTY, else `osascript … with administrator privileges`.
-3. **Askpass on macOS**: `BasePlatform.find_askpass()` installs an
-   `osascript`-backed shim so `sudo -A` works without `ksshaskpass`.
+3. **Askpass on macOS**: removed (#208) — dead since `sudo -A`/`ksshaskpass`
+   was never the live elevation path; see the `BasePlatform additions` table.
 4. **Notifications**: `macos.py` `osascript display dialog` is already correct in
    shape — add title/body escaping (`:94-98` interpolates unescaped).
 5. **`launchctl` label**: fix the `com.<name>.<name>` guess to try

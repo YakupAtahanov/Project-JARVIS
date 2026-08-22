@@ -9,6 +9,7 @@ tool, so a dangerous tool cannot opt out of gating.
 import pytest
 
 import jarvis.core.confirmation_manager as cm
+import jarvis.core.threat_level as threat_level
 from jarvis.core.confirmation_manager import ConfirmationManager
 from jarvis.core.threat_level import ThreatLevel, classify
 
@@ -301,3 +302,60 @@ class TestTierFloor:
             "threat_level": "safe",
         }
         assert classify("run_command", meta) == ThreatLevel.DANGEROUS
+
+
+@pytest.mark.unit
+class TestPrivilegedFloor:
+    """The privileged-command floor (#208): a non-shell tool whose params
+    contain an OS-privileged command prefix floors at ELEVATED. Covers the
+    gap the identity floor (unfamiliar tool name) and the payload regexes
+    (no sudo/rm -rf/etc. signature) both miss — e.g. `pacman -Syu`.
+    """
+
+    def _use_prefixes(self, monkeypatch, prefixes):
+        monkeypatch.setattr(
+            threat_level._platform.current, "privileged_prefixes", lambda: prefixes
+        )
+        threat_level._PRIVILEGED_PATTERN_CACHE.clear()
+
+    def test_privileged_prefix_on_unfamiliar_tool_raises_to_elevated(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman", "systemctl stop"))
+        assert classify("web_fetch", {}, {"cmd": "pacman -Syu"}) == ThreatLevel.ELEVATED
+
+    def test_multi_word_prefix_matches(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman", "systemctl stop"))
+        assert (
+            classify("web_fetch", {}, {"cmd": "systemctl stop sshd"})
+            == ThreatLevel.ELEVATED
+        )
+
+    def test_word_boundary_prevents_substring_false_positive(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman",))
+        assert (
+            classify("web_fetch", {}, {"cmd": "mypacmanwrapper -Syu"})
+            == ThreatLevel.SAFE
+        )
+
+    def test_prefix_after_shell_separator_still_matches(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman",))
+        assert (
+            classify("web_fetch", {}, {"cmd": "echo hi; pacman -Syu"})
+            == ThreatLevel.ELEVATED
+        )
+
+    def test_benign_command_stays_safe(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman",))
+        assert classify("web_fetch", {}, {"cmd": "echo hi"}) == ThreatLevel.SAFE
+
+    def test_empty_prefix_table_stays_safe(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ())
+        assert classify("web_fetch", {}, {"cmd": "pacman -Syu"}) == ThreatLevel.SAFE
+
+    def test_never_lowers_the_host_floor(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman",))
+        assert classify("run_command", {}, {"cmd": "echo hi"}) == ThreatLevel.DANGEROUS
+
+    def test_none_and_non_string_params_are_safe(self, monkeypatch):
+        self._use_prefixes(monkeypatch, ("pacman",))
+        assert classify("web_fetch", {}, None) == ThreatLevel.SAFE
+        assert classify("web_fetch", {}, {"count": 5}) == ThreatLevel.SAFE
