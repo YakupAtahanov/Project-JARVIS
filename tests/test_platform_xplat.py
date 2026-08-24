@@ -166,3 +166,59 @@ class TestNotificationKillSwitch:
         monkeypatch.setattr(p, "_detect_desktop_notifications", lambda: True)
         monkeypatch.delenv("JARVIS_DISABLE_NOTIFICATIONS", raising=False)
         assert p.has_desktop_notifications() is True
+
+
+class TestWindowsMultiSocketToken:
+    """`platform.current` is a singleton and the daemon opens three endpoints
+    (input, output, GUI). A per-call token overwrote its predecessor, so only
+    the last-created socket authenticated and `jarvis send`/`jarvis confirm`
+    were rejected on Windows (#174 Phase 3).
+
+    Runs on any OS: the Windows backend is pure Python TCP plus files.
+    """
+
+    @staticmethod
+    def _endpoints(tmp_path):
+        return [
+            str(tmp_path / name)
+            for name in ("input.sock", "output.sock", "jarvis.sock")
+        ]
+
+    def _serve_all(self, tmp_path):
+        p = WindowsPlatform()
+
+        async def handler(reader, writer):
+            pass
+
+        async def build():
+            servers = []
+            for path in self._endpoints(tmp_path):
+                servers.append(await p.create_ipc_server(path, handler))
+            return servers
+
+        servers = asyncio.run(build())
+        for s in servers:
+            s.close()
+        return p
+
+    def test_every_endpoint_publishes_the_verifiable_token(self, tmp_path):
+        p = self._serve_all(tmp_path)
+        for path in self._endpoints(tmp_path):
+            published = (
+                (tmp_path / (os.path.basename(path) + ".token")).read_text().strip()
+            )
+            assert (
+                published == p._startup_token
+            ), f"{os.path.basename(path)} published a token the daemon will reject"
+
+    def test_closing_one_endpoint_does_not_lock_out_the_others(self, tmp_path):
+        p = self._serve_all(tmp_path)
+        paths = self._endpoints(tmp_path)
+        p.ipc_cleanup(paths[0])
+        assert (
+            p._startup_token is not None
+        ), "the surviving sockets can still be reached"
+        p.ipc_cleanup(paths[1])
+        assert p._startup_token is not None
+        p.ipc_cleanup(paths[2])
+        assert p._startup_token is None, "the last endpoint gone: forget the secret"

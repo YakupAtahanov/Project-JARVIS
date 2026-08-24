@@ -42,7 +42,16 @@ def _lock_down_to_current_user(path: str) -> None:
 class WindowsPlatform(BasePlatform):
 
     def __init__(self) -> None:
+        # One token per DAEMON, not per socket. `platform.current` is a
+        # module-level singleton and create_ipc_server() runs once per
+        # endpoint (input, output, GUI), so a per-call token overwrote its
+        # predecessor and only the last endpoint could authenticate. Per-socket
+        # tokens would buy nothing anyway: every token file carries the same
+        # icacls ACL, so a reader of one can read all three -- what the token
+        # proves is "this process can read a current-user-only file", which is
+        # a property of the process, not of the endpoint.
         self._startup_token: Optional[str] = None
+        self._token_endpoints: set[str] = set()
 
     # -- Paths ---------------------------------------------------------------
 
@@ -81,10 +90,12 @@ class WindowsPlatform(BasePlatform):
         Path(port_file).write_text(str(port), encoding="utf-8")
         _lock_down_to_current_user(port_file)
 
-        self._startup_token = secrets.token_hex(_TOKEN_NBYTES)
+        if self._startup_token is None:
+            self._startup_token = secrets.token_hex(_TOKEN_NBYTES)
         token_file = path + _TOKEN_FILE_SUFFIX
         Path(token_file).write_text(self._startup_token, encoding="utf-8")
         _lock_down_to_current_user(token_file)
+        self._token_endpoints.add(path)
 
         return server
 
@@ -110,7 +121,12 @@ class WindowsPlatform(BasePlatform):
                 os.unlink(f)
             except OSError:
                 pass
-        self._startup_token = None
+        # Only forget the token once every endpoint that published it is gone.
+        # Clearing it on the first cleanup fail-closed the sockets still
+        # serving, which turned an orderly shutdown into a lockout.
+        self._token_endpoints.discard(path)
+        if not self._token_endpoints:
+            self._startup_token = None
 
     def ipc_secure(self, path: str) -> None:
         pass
