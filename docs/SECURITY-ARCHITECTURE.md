@@ -119,14 +119,31 @@ the same design decision.
 **OpenClaw:** Default configuration listened on TCP port 18789 with no
 authentication.
 
-**JARVIS:** Uses Unix domain sockets under `$JARVIS_DATA_DIR` (Linux default
-`~/.local/share/jarvis/`): `input.sock`, `output.sock`, and the bidirectional
-GUI socket `jarvis.sock`.  These are file-system objects — not TCP ports
-— and are not reachable from the network.  `jarvis/core/socket_security.py`
-hardens their permissions to `0600` (owner-only) at creation time.
+**JARVIS:** IPC is **never reachable from the network on any platform**, but
+the transport differs by OS because Windows lacks Unix domain sockets:
 
-- Status: ✅ Not network-exposed by default · ⚠️ Same-user local processes
-  can still reach the socket (see § Remaining Attack Surfaces below) ·
+- **Linux/macOS** use Unix domain sockets under `$JARVIS_DATA_DIR` (Linux
+  default `~/.local/share/jarvis/`): `input.sock`, `output.sock`, and the
+  bidirectional GUI socket `jarvis.sock`.  These are file-system objects, not
+  network ports — the networking stack is not involved at all.
+  `jarvis/core/socket_security.py` hardens their permissions to `0600`
+  (owner-only) at creation, and the kernel identifies the connecting user at
+  accept time (`SO_PEERCRED` / `LOCAL_PEERCRED`, `jarvis/platform/`).
+- **Windows** has no Unix domain socket, so it binds a TCP socket to the
+  **loopback address `127.0.0.1`** (`jarvis/platform/windows.py`) — reachable
+  only from within the same machine, never from another host (unlike OpenClaw's
+  `0.0.0.0` listener, which any networked machine could reach). Loopback closes
+  the network door but not the same-machine one, so the port is additionally
+  gated by a per-startup random token: written to a file locked to the current
+  user on a **best-effort** basis (`icacls`, which may silently no-op) and
+  required as the connection's first line before any message is honored — so
+  the token itself, not the file ACL, is the boundary. This is a documented interim; the target is a named pipe with a
+  per-user DACL, whose OS-level access control matches the Unix-socket
+  guarantee (see `docs/PORTABILITY-SPEC.md` §3.1).
+
+- Status: ✅ Not network-exposed by default on any platform (Unix socket on
+  Linux/macOS; loopback-only TCP on Windows) · ⚠️ Same-user local processes
+  can still reach the endpoint (see § Remaining Attack Surfaces below) ·
   ⚠️ **Conditional exception:** `jarvis/server/openai_compat.py` adds an
   **opt-in** OpenAI-compatible TCP listener (`JARVIS_OPENAI_SERVER_ENABLED`,
   default `false`) so JARVIS can act as a backend for OpenAI-compatible
@@ -242,21 +259,28 @@ accept TLA confirmation-control messages (`approve_confirmation`,
 confirmation gate as well.
 
 **Current mitigations:**
-- `jarvis/core/socket_security.py` sets socket permissions to `0600` —
-  only the owner can read/write.
+- On Linux/macOS, `jarvis/core/socket_security.py` sets socket permissions to
+  `0600` — only the owner can read/write. (Windows loopback TCP has no file
+  mode; its equivalent is the accept-time token below.)
 - Clients check that the socket was created by the current user before
   connecting, preventing pre-created hijack sockets. The live check is
   `platform.ipc_verify_owner()`, called directly from `jarvis/cli.py`;
   the `socket_security.verify_socket_ownership()` wrapper delegates to
   the same check but has no callers today.
+- **Accept-time peer authentication** on every endpoint — `input`, `output`,
+  and GUI (`platform.ipc_verify_peer()`, wired at all three accept sites in
+  `jarvis/runtime/io.py`). The mechanism is per-OS: **Linux** uses
+  `SO_PEERCRED` and **macOS** `LOCAL_PEERCRED` (the kernel reports the
+  connecting process's UID; a non-owner is refused), while **Windows** — where
+  loopback TCP carries no peer credentials — requires a **per-startup random
+  token**, written to a file the current user can read (`icacls`, best-effort)
+  and checked as the connection's first line, so a passive local process cannot
+  inject mid-session; the token, not the best-effort ACL, is the boundary.
 
 **Planned:**
-- `SO_PEERCRED` check on connection accept — the kernel exposes the
-  connecting process’s UID, GID, and PID.  JARVIS can refuse connections
-  from unexpected PIDs.
-- Session token: a random token generated at startup that the connecting
-  process must include in its first message, preventing passive observers
-  from injecting commands mid-session.
+- Windows named-pipe transport with a per-user DACL, replacing the interim
+  loopback-TCP-plus-token with an OS-enforced access-control boundary that
+  matches the Unix-socket guarantee (`docs/PORTABILITY-SPEC.md` §9).
 
 ### 3. MCP Server Trust
 
@@ -313,6 +337,8 @@ vulnerabilities.
 ---
 
 ## Changelog — corrected claims
+
+*2026-08-25:* cross-platform IPC disclosure corrected (#174). The Exposed-Instances section described only the Linux Unix-socket shape and claimed the endpoints are "not TCP ports", while Windows has shipped a loopback-TCP transport (`127.0.0.1`, ephemeral port) since the platform backend landed — accurate in `PORTABILITY-SPEC.md`/`architecture.md` but not in this canonical file. Reworded to state the real guarantee (never network-reachable on any platform: Unix socket on Linux/macOS, loopback-only TCP on Windows, contrasted with OpenClaw's `0.0.0.0`) and the honest per-OS same-machine story (filesystem `0600` + kernel peer credentials vs a per-startup, best-effort-ACL'd token). The same-user "Planned" block also mixed shipped and unshipped work: accept-time peer authentication on the **input and GUI** sockets (`SO_PEERCRED`/`LOCAL_PEERCRED`, Windows token) shipped 2026-07-16 (`cf7c056`) yet was still listed as planned — a genuine docs-lag now corrected. Peer auth on the **output** socket was NOT a docs-lag: it was unenforced until `c27b8a3` (this cycle, #174) added it, so `ipc_verify_peer` now guards all three accept sites. The only remaining planned item is the Windows named-pipe + DACL backend. This doc edit is itself documentation-only, but — unlike a pure docs-lag correction — part of what it now documents (the output-socket guard) is code that landed alongside it, not pre-existing behavior.
 
 *2026-08-17:* Threat 3/#223 — the registry trust tier now scales the TLA gate. `classify()` gains a fourth raise-only input: the dispatch path stamps `registry_tier` (the install-time `trustStatus` dmcp records in the local manifest — dmcp normalizes it at install and stamps `unknown` on URL/connect installs, closing a spoofing hole where a fetched manifest's self-declared tier persisted verbatim) and `registry_declared` (this tool has a manifest declaration), and `_tier_floor` returns ELEVATED unless the tier is `official`/`community` AND the tool is declared — so the measured 193-of-215-unconfirmed gap is closed by review-backed declarations rather than a longer name allowlist, and an unreviewed server cannot self-declare `safe`. Legacy tiers (`vetted`/`unreviewed`) deliberately land in the unknown bucket until a reinstall refreshes them. In the same pass the declaration merge became authoritative for `threat_level`/`confirmation_required`: `tools/list` cannot legitimately carry them, so a runtime value is server-controlled injection and no longer shadows the reviewed declaration (this supersedes the 2026-08-07 "never clobbers" wording below). Fail-toward-caution replaces fail-open: an unreadable manifest now floors the tool at ELEVATED instead of falling back to host floor + payload scan, still logged loud. Verified red-then-green in `tests/test_threat_level_manifest_merge.py` + `tests/test_threat_level.py` (13 fail against the unfixed gate) and against real installed manifests on a live box. Bare-metadata callers are unchanged — the caution default lives in the dispatch plumbing, not in `classify()`'s handling of absent metadata.
 
