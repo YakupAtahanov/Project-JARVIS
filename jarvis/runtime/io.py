@@ -243,6 +243,15 @@ async def handle_output_connection(
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle output subscriber lifecycle."""
+    if not await platform.ipc_verify_peer(reader, writer):
+        logger.warning("JARVIS: Rejected output connection — peer verification failed")
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return
+
     app._output_clients.append(writer)
     logger.info(
         f"JARVIS: Output subscriber connected ({len(app._output_clients)} total)"
