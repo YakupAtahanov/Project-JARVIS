@@ -408,14 +408,20 @@ async def list_server_tools(logger: Logger, server_id: str) -> Dict[str, Any]:
 
 
 def _dmcp_base_dir() -> Path:
-    """dmcp's own per-OS data directory (its Rust ``directories``-crate layout).
+    """dmcp's own per-OS data directory (the parent of ``installed/``).
 
-    Hardcoding the XDG path here silently pointed at the wrong directory on
-    macOS/Windows even though dmcp itself already gets this right (#171).
-    Ask dmcp directly first so this stays correct if its layout ever
-    changes; fall back to the `directories`-crate convention it uses
-    (``ProjectDirs::from("", "", "dmcp").data_dir()``) if the binary isn't
-    on PATH yet or is too old to support `paths --json`.
+    Ask dmcp directly first (``dmcp paths --json`` exposes ``data_dir``,
+    the directory containing ``installed/``) so this stays correct if its
+    layout ever changes; fall back to dmcp's own convention only when the
+    binary isn't on PATH yet or is too old to support ``paths --json``.
+
+    dmcp uses the ``dirs`` crate and joins the literal ``"mcp"`` onto the
+    platform's data-local dir — NOT ``directories``'s
+    ``ProjectDirs::from("", "", "dmcp")`` (an earlier version of this note
+    claimed that and pointed the macOS/Windows fallbacks at the wrong
+    directory, #171). Every fallback therefore ends in ``mcp``:
+    ``LOCALAPPDATA/mcp`` on Windows, ``~/Library/Application Support/mcp``
+    on macOS, and ``$XDG_DATA_HOME`` (or ``~/.local/share``) ``/mcp`` on Linux.
     """
     try:
         result = subprocess.run(
@@ -433,10 +439,10 @@ def _dmcp_base_dir() -> Path:
         pass
 
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "dmcp"
+        return Path.home() / "Library" / "Application Support" / "mcp"
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
-        return Path(base) / "dmcp" / "data"
+        return Path(base) / "mcp"
     data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return data_home / "mcp"
 
