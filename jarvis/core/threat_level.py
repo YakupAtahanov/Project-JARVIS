@@ -12,9 +12,11 @@ Classification is per TOOL, not per server: a server's dangerous tool
 (``run_command``) is gated while its safe siblings (``web_search``) are not.
 
 Beyond tool identity, the *parameters* are scanned for dangerous payloads
-(``rm -rf``, ``dd if=``, ``| sh`` …): a host-safe tool handed a destructive
-argument is raised too. This is raise-only and complements the identity floor;
-it never lowers a level (Project-JARVIS #162).
+across both Unix and Windows shells (``rm -rf``, ``dd if=``, ``| sh``,
+``Remove-Item -Recurse``, ``vssadmin delete shadows``, ``| iex`` …): a
+host-safe tool handed a destructive argument is raised too. This is raise-only
+and complements the identity floor; it never lowers a level (Project-JARVIS
+#162).
 
 The fourth input is the *registry tier* (#223): the dispatch path stamps the
 server's install-time trust tier (``registry_tier``) and whether the local
@@ -117,8 +119,11 @@ def _tier_floor(tool_metadata: Dict[str, Any]) -> ThreatLevel:
 # of which tool carries it: a host-"safe" tool (an HTTP fetch, a file writer)
 # handed one of these is doing something destructive or escalating. Deliberately
 # narrow — only signatures that essentially never occur in benign input — so a
-# false positive (which costs only an extra confirmation) stays rare.
+# false positive (which costs only an extra confirmation) stays rare. Covers
+# both Unix/POSIX and Windows/PowerShell shells, since a host-safe tool runs
+# on whatever OS the daemon is on.
 _DANGEROUS_PAYLOAD_PATTERNS = (
+    # --- Unix / POSIX shells ---
     re.compile(r"\bsudo\s+\S", re.IGNORECASE),  # privilege escalation
     re.compile(r"\brm\s+-\w*[rf]", re.IGNORECASE),  # rm -rf / -r / -f
     re.compile(r"\bdd\s+if=", re.IGNORECASE),  # raw disk copy
@@ -131,6 +136,27 @@ _DANGEROUS_PAYLOAD_PATTERNS = (
     re.compile(
         r"\bchmod\s+-\w*R\w*\s+0*777\b", re.IGNORECASE
     ),  # recursive world-writable
+    # --- Windows / PowerShell shells --- (require the destructive flag/drive so
+    # bare 'del'/'format'/'rd' in prose never trips)
+    re.compile(
+        r"\bRemove-Item\b.*?\s-(?:Recurse|Force|r)\b", re.IGNORECASE
+    ),  # recursive/forced delete
+    re.compile(r"\b(?:rd|rmdir)\b.*?\s/s\b", re.IGNORECASE),  # recursive dir delete
+    re.compile(r"\bdel\b.*?\s/(?:s|q)\b", re.IGNORECASE),  # recursive/quiet delete
+    re.compile(r"\bformat\s+[a-z]:", re.IGNORECASE),  # format a drive
+    re.compile(r"\bdiskpart\b", re.IGNORECASE),  # partition editor
+    re.compile(r"\breg\s+delete\b", re.IGNORECASE),  # registry key delete
+    re.compile(
+        r"\bvssadmin\s+delete\s+shadows\b", re.IGNORECASE
+    ),  # wipe shadow copies (ransomware)
+    re.compile(r"\bbcdedit\b", re.IGNORECASE),  # boot configuration edit
+    re.compile(r"\bcipher\s+/w", re.IGNORECASE),  # wipe free space
+    re.compile(
+        r"\bSet-ExecutionPolicy\b.*?\b(?:Bypass|Unrestricted)\b", re.IGNORECASE
+    ),  # disable script-signing enforcement
+    re.compile(
+        r"\|\s*(?:iex|powershell)\b|\bIEX\s*\(", re.IGNORECASE
+    ),  # pipe into PowerShell / Invoke-Expression
 )
 
 
