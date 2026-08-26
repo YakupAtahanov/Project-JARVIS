@@ -7,6 +7,7 @@ so the check runs on any host.
 """
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,16 @@ class TestSudoWithoutEuid:
     def test_status_is_readable_without_euid(self, no_geteuid):
         # Read-only status never needed euid; confirm it still answers.
         assert isinstance(sudo_manager.is_sudo_enabled(), bool)
+
+    def test_status_survives_an_unreadable_sudoers_dir(self, monkeypatch):
+        """/etc/sudoers.d is often 0750 root-only, so the existence check
+        itself can be denied — `jarvis sudo` must report, not crash."""
+
+        def denied(self):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(Path, "exists", denied)
+        assert sudo_manager.is_sudo_enabled() is False
 
     def test_non_root_euid_still_returns_false(self, monkeypatch):
         # With a real but non-zero euid, enable/disable still decline.

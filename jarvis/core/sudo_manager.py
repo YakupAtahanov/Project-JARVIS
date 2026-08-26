@@ -95,8 +95,17 @@ def is_sudo_enabled() -> bool:
 
     Read-only and root-free — reflects real system state so the CLI can flag
     when it diverges from the ``JARVIS_SUDO_ENABLED`` preference.
+
+    Never raises: ``/etc/sudoers.d`` is commonly mode 0750 root-only, so the
+    lookup itself can be denied (and the path does not exist off Linux). A
+    drop-in we cannot see is one we cannot claim is installed, so an
+    unreadable parent reads as "not enabled" rather than crashing `jarvis
+    sudo`.
     """
-    return SUDOERS_DROPIN.exists()
+    try:
+        return SUDOERS_DROPIN.exists()
+    except OSError:
+        return False
 
 
 def enable_sudo() -> bool:
