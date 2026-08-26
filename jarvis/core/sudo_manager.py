@@ -27,6 +27,18 @@ from pathlib import Path
 SUDOERS_DROPIN = Path("/etc/sudoers.d/jarvis")
 
 
+def _is_root() -> bool:
+    """True only when the process is euid 0.
+
+    ``os.geteuid`` is POSIX-only; on Windows it does not exist. There is no
+    sudoers there to manage, so the honest answer is 'not root' rather than a
+    crash — the macOS/Windows platform backends already report sudo as
+    'not granted'.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0
+
+
 def _target_user() -> str:
     # Under `sudo jarvis sudo enable` the process runs as root; act on the
     # original user, recorded by sudo in SUDO_USER, not on root.
@@ -93,7 +105,7 @@ def enable_sudo() -> bool:
     Returns ``False`` without modifying anything when not run as root or when
     the candidate file fails ``visudo`` validation.
     """
-    if os.geteuid() != 0:
+    if not _is_root():
         return False
     return _install_dropin(f"{_target_user()} ALL=(ALL) ALL\n")
 
@@ -104,7 +116,7 @@ def disable_sudo() -> bool:
     Returns ``False`` when not run as root; ``True`` when the drop-in is absent
     or successfully removed.
     """
-    if os.geteuid() != 0:
+    if not _is_root():
         return False
     try:
         SUDOERS_DROPIN.unlink(missing_ok=True)
