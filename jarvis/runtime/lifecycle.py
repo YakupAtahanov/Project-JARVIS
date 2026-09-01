@@ -13,7 +13,12 @@ from typing import Any, Dict, Optional
 from ..config import Config
 from ..core.voice_state import VoiceState
 from ..platform import current as platform
-from .io import broadcast_to_gui_clients, enrich_pending_with_goals, set_gui_state
+from .io import (
+    apply_confirmation_decision,
+    broadcast_to_gui_clients,
+    enrich_pending_with_goals,
+    set_gui_state,
+)
 from .voice_activation_thread import run_voice_activation
 
 
@@ -158,6 +163,52 @@ def resolve_user_source(app: Any) -> Optional[Callable[[], Any]]:
     return app._await_user_input if stdin_is_tty() else None
 
 
+def apply_queued_confirmation_decisions(app: Any, logger: Logger) -> int:
+    """Replay decisions taken through `jarvis confirm` while the daemon was off.
+
+    Each queued message goes through `apply_confirmation_decision`, the same
+    translation a live socket client's message gets, so per-task indices,
+    approve-all expansion, the GUI broadcast and the #146 goal-gone resume
+    logging all behave identically. Ids that are unknown or already resolved
+    fall out in `resolve()` as a warn-and-skip, which is the wanted outcome.
+
+    Trust: the queue file is protected by the same same-user filesystem
+    boundary the local socket model relies on, and is trusted exactly that far
+    — no further. On Windows the file's inherited ACL is the analogue.
+
+    The file is dropped only after every decision has been injected. Re-running
+    a consumed decision is a harmless warn-and-skip, so a crash mid-apply costs
+    at most a repeated no-op.
+    """
+    from ..core.confirmation_manager import (
+        clear_decision_queue,
+        decision_queue_path,
+        load_decision_queue,
+    )
+
+    path = decision_queue_path()
+    decisions = load_decision_queue(path, quarantine=True)
+    if not decisions:
+        clear_decision_queue(path)
+        return 0
+
+    applied = 0
+    for decision in decisions:
+        if apply_confirmation_decision(app, decision) is None:
+            logger.warning(
+                "JARVIS: Ignoring unrecognised queued decision %r", decision.get("type")
+            )
+            continue
+        applied += 1
+
+    clear_decision_queue(path)
+    logger.info(
+        "JARVIS: applied %d queued confirmation decision(s) from offline review",
+        applied,
+    )
+    return applied
+
+
 async def start_runtime_services(app: Any, logger: Logger) -> dict[str, Any]:
     """Start event sources and optional socket/voice runtime services."""
     user_source = resolve_user_source(app)
@@ -199,6 +250,11 @@ async def start_runtime_services(app: Any, logger: Logger) -> dict[str, Any]:
     # Wire confirmation manager's event injector so responses flow
     # through the event loop instead of blocking.
     app.confirmation.set_event_injector(app.events.inject_confirmation_response)
+
+    # Offline review catches up here: the merged queue is running and the
+    # injector is wired, so a decision queued with the daemon down resolves on
+    # the first turns of this run — whether or not any socket is enabled.
+    apply_queued_confirmation_decisions(app, logger)
 
     output_socket_task: Optional[asyncio.Task] = None
     if Config.JARVIS_OUTPUT_SOCKET:

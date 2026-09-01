@@ -28,7 +28,7 @@ class TestCmdConfirmationsRequestBuilding:
 
     def _run(self, monkeypatch, argv, ack=True):
         monkeypatch.setattr(cli.sys, "argv", argv)
-        monkeypatch.setattr(cli, "_find_ipc_endpoint", lambda: "/fake/sock")
+        monkeypatch.setattr(cli, "_find_ipc_endpoint", lambda quiet=False: "/fake/sock")
 
         sent = {}
         sock = MagicMock()
