@@ -126,6 +126,23 @@ async def _handle_confirmation_query(
         )
         return True
 
+    ack = apply_confirmation_decision(app, msg)
+    if ack is None:
+        return False
+    await _gui_write(writer, {"type": "ack", "message": ack})
+    return True
+
+
+def apply_confirmation_decision(app: Any, msg: dict) -> str | None:
+    """Turn one approve/deny protocol message into injected event(s).
+
+    Returns the ack text, or None if `msg` is not a decision. This is the sole
+    translation from the wire protocol to `CONFIRMATION_RESPONSE` events, so
+    every client — socket, GUI, and the offline queue replayed at startup —
+    resolves through identical injections.
+    """
+    msg_type = msg.get("type")
+
     if msg_type == "approve_confirmation":
         app.events.inject_confirmation_response(
             {
@@ -134,10 +151,7 @@ async def _handle_confirmation_query(
                 "approved": True,
             }
         )
-        await _gui_write(
-            writer, {"type": "ack", "message": f"Approved {msg.get('id', '')}"}
-        )
-        return True
+        return f"Approved {msg.get('id', '')}"
 
     if msg_type == "deny_confirmation":
         app.events.inject_confirmation_response(
@@ -147,10 +161,7 @@ async def _handle_confirmation_query(
                 "approved": False,
             }
         )
-        await _gui_write(
-            writer, {"type": "ack", "message": f"Denied {msg.get('id', '')}"}
-        )
-        return True
+        return f"Denied {msg.get('id', '')}"
 
     if msg_type == "partial_approve_confirmation":
         # Per-task decision (#187): approve a subset of a batched confirmation
@@ -164,14 +175,7 @@ async def _handle_confirmation_query(
                 "approved_indices": indices,
             }
         )
-        await _gui_write(
-            writer,
-            {
-                "type": "ack",
-                "message": f"Resolved {msg.get('id', '')} ({len(indices)} approved)",
-            },
-        )
-        return True
+        return f"Resolved {msg.get('id', '')} ({len(indices)} approved)"
 
     if msg_type == "approve_all_confirmations":
         ids = [c["id"] for c in app.confirmation.list_pending()]
@@ -179,12 +183,9 @@ async def _handle_confirmation_query(
             app.events.inject_confirmation_response(
                 {"type": "confirmation_response", "id": cid, "approved": True}
             )
-        await _gui_write(
-            writer, {"type": "ack", "message": f"Approved {len(ids)} confirmation(s)"}
-        )
-        return True
+        return f"Approved {len(ids)} confirmation(s)"
 
-    return False
+    return None
 
 
 def on_output_for_broadcast(app: Any, response: dict[str, Any]) -> None:

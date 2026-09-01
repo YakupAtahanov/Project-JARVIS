@@ -53,11 +53,14 @@ else:
     ENV_FILE = _platform.config_dir() / "jarvis.conf"
 
 
-def _find_ipc_endpoint() -> "str | None":
+def _find_ipc_endpoint(quiet: bool = False) -> "str | None":
     """Locate and ownership-verify a running JARVIS instance's input socket.
 
     Prints its own error and returns None on failure so callers can decide
-    whether to exit.
+    whether to exit. ``quiet`` suppresses only the not-found message, for
+    callers with a working offline fallback for a stopped daemon; a failed
+    ownership check stays loud either way, because that is a security signal
+    rather than an absent daemon.
     """
     from .platform import current as platform
 
@@ -68,9 +71,10 @@ def _find_ipc_endpoint() -> "str | None":
             path = p
             break
     if not path:
-        print("Error: JARVIS IPC endpoint not found.")
-        print("  Tried:", ", ".join(p for p in candidates if p))
-        print("  Is JARVIS running? Start with 'jarvis' or 'jarvis run'.")
+        if not quiet:
+            print("Error: JARVIS IPC endpoint not found.")
+            print("  Tried:", ", ".join(p for p in candidates if p))
+            print("  Is JARVIS running? Start with 'jarvis' or 'jarvis run'.")
         return None
     if not platform.ipc_verify_owner(path):
         print("Error: IPC endpoint ownership check failed.")
@@ -123,8 +127,16 @@ def _format_age(created_at: float) -> str:
     return f"{int(delta // 3600)}h ago"
 
 
+OFFLINE_NOTICE = "daemon offline — decisions queue and apply at next start"
+
+
 def _cmd_confirm() -> None:
-    """List or resolve pending tool confirmations on a running JARVIS instance (#192)."""
+    """List or resolve pending tool confirmations (#192).
+
+    Prefers the running daemon's socket; falls back to the on-disk store and
+    decision queue when it is not reachable, so a review is possible between
+    restarts as well as across one.
+    """
     from .platform import current as platform
 
     if len(sys.argv) == 2:
@@ -166,9 +178,10 @@ def _cmd_confirm() -> None:
             _show_confirm_usage()
             sys.exit(1)
 
-    path = _find_ipc_endpoint()
+    path = _find_ipc_endpoint(quiet=True)
     if not path:
-        sys.exit(1)
+        _confirm_offline(request)
+        return
 
     try:
         sock = platform.ipc_connect(path)
@@ -179,8 +192,9 @@ def _cmd_confirm() -> None:
         finally:
             sock.close()
     except (socket.error, OSError) as e:
-        print(f"Error: Could not reach JARVIS: {e}")
-        sys.exit(1)
+        print(f"Could not reach JARVIS: {e}")
+        _confirm_offline(request)
+        return
 
     if not response_line:
         print("Error: No response from JARVIS.")
@@ -193,30 +207,102 @@ def _cmd_confirm() -> None:
         sys.exit(1)
 
     if response.get("type") == "confirmation_list":
-        confirmations = response.get("confirmations", [])
-        if not confirmations:
-            print("No pending confirmations.")
-            return
-        print(f"Pending confirmations ({len(confirmations)}):")
-        for c in confirmations:
-            goal_desc = c.get("goal_description")
-            session = c.get("session_id")
-            age = _format_age(c["created_at"]) if c.get("created_at") else "?"
-            header = f'  [{c["id"]}] '
-            if goal_desc:
-                header += f'goal "{goal_desc}"  '
-            if session:
-                header += f"(session {session}, {age})"
-            else:
-                header += f"({age})"
-            print(header)
-            for i, line in enumerate(c.get("tool_lines") or c.get("tool_names", [])):
-                print(f"        [{i}] {line}")
+        _print_confirmation_list(response.get("confirmations", []))
     elif response.get("type") == "ack":
         print(response.get("message", "Done."))
     else:
         print(f"Error: {response.get('message', 'Unexpected response')}")
         sys.exit(1)
+
+
+def _print_confirmation_list(confirmations: list) -> None:
+    """Render the pending list — the one renderer for live and offline alike."""
+    if not confirmations:
+        print("No pending confirmations.")
+        return
+    print(f"Pending confirmations ({len(confirmations)}):")
+    for c in confirmations:
+        goal_desc = c.get("goal_description")
+        session = c.get("session_id")
+        age = _format_age(c["created_at"]) if c.get("created_at") else "?"
+        header = f'  [{c["id"]}] '
+        if goal_desc:
+            header += f'goal "{goal_desc}"  '
+        if session:
+            header += f"(session {session}, {age})"
+        else:
+            header += f"({age})"
+        print(header)
+        for i, line in enumerate(c.get("tool_lines") or c.get("tool_names", [])):
+            print(f"        [{i}] {line}")
+
+
+def _describe_decision(decision: dict) -> str:
+    """One-line rendering of a queued decision, e.g. ``approve items 0,2``."""
+    kind = decision.get("type")
+    if kind == "approve_confirmation":
+        return "approve"
+    if kind == "deny_confirmation":
+        return "deny"
+    if kind == "partial_approve_confirmation":
+        indices = ",".join(str(i) for i in decision.get("approved_indices", []))
+        return f"approve items {indices}"
+    return "approve-all"
+
+
+def _print_queued_decisions(queued: list) -> None:
+    """Show what a previous offline session already decided (#224 follow-up)."""
+    if not queued:
+        return
+    print(f"Queued decisions ({len(queued)}), applied at next start:")
+    for d in queued:
+        target = f'[{d["id"]}] ' if d.get("id") else ""
+        print(f"  {target}{_describe_decision(d)}")
+
+
+def _confirm_offline(request: dict) -> None:
+    """Serve `jarvis confirm` from disk when the daemon is unreachable.
+
+    Listing reads the #224 store; a decision is appended to the queue file as
+    the exact socket-protocol message a live client would have sent, and the
+    daemon replays it at startup. Queuing a decision for an id that is not in
+    the store is refused — an approval nobody can match is a silent no-op at
+    best and a stale approval waiting for an id collision at worst.
+    """
+    from .core.confirmation_manager import (
+        decision_queue_path,
+        load_decision_queue,
+        load_pending_summaries,
+        queue_decision,
+        store_path,
+    )
+
+    pending = load_pending_summaries(store_path())
+    queue_path = decision_queue_path()
+
+    if request["type"] == "list_confirmations":
+        _print_confirmation_list(pending)
+        _print_queued_decisions(load_decision_queue(queue_path))
+        print(OFFLINE_NOTICE)
+        return
+
+    known = {c["id"] for c in pending}
+    if request["type"] == "approve_all_confirmations":
+        if not known:
+            print("Nothing pending.")
+            return
+        target = f"approve-all ({len(known)} pending)"
+    else:
+        if request["id"] not in known:
+            print(f"Error: No pending confirmation with id '{request['id']}'.")
+            print("  Run 'jarvis confirm' to see what is waiting.")
+            sys.exit(1)
+        target = f"{_describe_decision(request)} {request['id']}"
+
+    replaced = queue_decision(request, queue_path)
+    print(f"Queued: {target} — applies when the daemon starts.")
+    if replaced:
+        print("  (replaces the earlier queued decision for this confirmation)")
 
 
 def _show_confirm_usage() -> None:
@@ -226,6 +312,7 @@ def _show_confirm_usage() -> None:
     print("  jarvis confirm approve <id> 0,2       # Approve only items 0 and 2")
     print("  jarvis confirm deny <id>              # Deny the whole batch")
     print("  jarvis confirm approve-all            # Approve all pending")
+    print("  (daemon off: decisions queue on disk and apply at its next start)")
 
 
 def set_output_mode(mode: str) -> None:
@@ -589,6 +676,7 @@ def show_usage() -> None:
     print("  jarvis confirm approve <id> 0,2       # Approve only items 0 and 2")
     print("  jarvis confirm deny <id>              # Deny the whole batch")
     print("  jarvis confirm approve-all            # Approve all pending")
+    print("  (daemon off: decisions queue on disk and apply at its next start)")
     print()
     print("Provider Pool:")
     print("  jarvis providers                                    # List providers")

@@ -15,7 +15,7 @@ from ..voice.audio import (
     check_audio_output_available,
 )
 from .command_parser import TaskParser
-from .confirmation_manager import ConfirmationManager
+from .confirmation_manager import STORE_FILENAME, ConfirmationManager
 from .logger import get_logger
 from .output_manager import OutputManager
 from .system_info import SystemInfo
@@ -189,7 +189,7 @@ class ComponentFactory:
         memory-only.
         """
         logger.info("Initiating Confirmation manager...")
-        store = os.path.join(Config.JARVIS_DATA_DIR, "confirmations.json")
+        store = os.path.join(Config.JARVIS_DATA_DIR, STORE_FILENAME)
         return ConfirmationManager(store_path=store)
 
     @staticmethod
