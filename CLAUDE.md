@@ -121,6 +121,29 @@ restart dispatches with its goal gone: goal-linking logs and no-ops, the
 tasks still run. A `ConfirmationManager()` built with no store path is
 memory-only and performs no disk I/O at all (the test suite's default).
 
+**`jarvis confirm` also works while the daemon is off.** It prefers the input
+socket; when the endpoint is absent or the connection is refused it reads the
+same store file directly (rendered by the same listing code, plus a `daemon
+offline — decisions queue and apply at next start` line and any decisions
+already queued). `approve`/`deny`/`approve <id> 0,2`/`approve-all` then append
+the exact socket-protocol message a live client would have sent to
+`$JARVIS_DATA_DIR/confirmation_decisions.json` (atomic write, one decision per
+id, last writer wins); an id absent from the store is refused rather than
+queued. At startup `lifecycle.apply_queued_confirmation_decisions()` — wired
+right after `set_event_injector`, before and regardless of any socket — replays
+each message through `io.apply_confirmation_decision()`, the same translation a
+live client's message gets, so per-task indices, approve-all expansion, the GUI
+broadcast and the goal-gone resume path behave identically. Unknown or
+already-resolved ids warn-skip inside `resolve()`; the queue file is deleted
+only after the whole batch is injected (re-applying is a harmless warn-skip, so
+a crash mid-apply is safe), and a corrupt queue is preserved as
+`confirmation_decisions.json.bad` instead of being dropped. **Security:** the
+queue file's protection is the same same-user filesystem boundary the local
+socket model already relies on — the daemon trusts a queued decision exactly as
+far as it trusts a local same-user socket client, no further. On Windows the
+file's inherited ACL is the analogue, best-effort like the socket hardening
+there.
+
 ### Socket Security
 
 `socket_security.py` hardens the three IPC endpoints under `JARVIS_DATA_DIR`
@@ -260,6 +283,8 @@ make check                  # Format + lint + typecheck + tests
 ---
 
 ## Changelog — corrected claims
+
+*2026-09-01:* `jarvis confirm` is no longer socket-only (#224 follow-up). The Confirmation Channels paragraph described a review queue that survives a restart, but the only way to review it exited 1 whenever `_find_ipc_endpoint()` found nothing or `ipc_connect` was refused — so the queue was unreachable in exactly the window it was built for, between restarts. `_cmd_confirm` now falls back to the store file for listing (the renderer was extracted to `_print_confirmation_list` so live and offline output is the same code, not a lookalike) and appends decisions to `$JARVIS_DATA_DIR/confirmation_decisions.json`. `_find_ipc_endpoint(quiet=True)` suppresses only the not-found message: a failed ownership check still prints its error loudly before the fallback runs, because a socket that is not ours is a security signal rather than a stopped daemon — but the review itself continues offline, since the queue is a same-user file our own daemon will read. The four decision branches of `io._handle_confirmation_query` were extracted to `io.apply_confirmation_decision()`, which the startup replay calls, so there is one translation from wire protocol to `CONFIRMATION_RESPONSE` events rather than a second copy that can drift. Verified red-then-green in `tests/test_confirmation_offline_queue.py` (20 tests): offline list from the store on an absent endpoint and on a refused connect, each protocol shape queued exactly, replacement per id, unknown id refused without writing, a reachable daemon writing nothing at all, startup replay resuming through `root_handlers.on_confirmation_response` with the queue file cleared and the summary logged, a stale id warn-skipping while the file still clears, and a corrupt queue quarantined as `.bad` without breaking startup.
 
 *2026-09-01:* the pending-confirmations list is no longer memory-only (#224). The Confirmation Channels paragraph above said it "lives only in the daemon's memory ... does NOT survive a daemon restart ... Tracked as a gap, not a design decision" — the gap is now closed. `ConfirmationManager.__init__` takes an optional `store_path`; the daemon's instance gets `$JARVIS_DATA_DIR/confirmations.json` from `component_factory.create_confirmation_manager()`, and `_pending` is mirrored there (atomic tmp + `os.replace`, modelled on `constraint_store.py`) after the request that adds an entry and after the `resolve()` that pops it — the only two mutation points, so every channel and the auto-deny timer flow through them. Restore happens in the constructor: entries come back with `created_at`/`session_id` intact, fire no notification, and arm no timeout task regardless of `CONFIRMATION_TIMEOUT` (a clock started before the restart would fire on an arbitrary remainder), so a restored item is a review-queue entry for `jarvis confirm`/GUI. A corrupt or unreadable store warns and starts empty. Approving a restored entry resumes through `root_handlers.on_confirmation_response` as before, except the owning goal was archived at shutdown (#146) — `link_tasks`/`link_dispatch_fingerprint`/`link_dispatch_servers` were already no-ops for a missing goal; the resume path now logs that once instead of leaving "dispatched unlinked" invisible. A bare `ConfirmationManager()` is unchanged and writes nothing, which is what every existing test uses.
 

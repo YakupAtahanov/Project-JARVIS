@@ -41,6 +41,16 @@ construction, so a confirmation survives a daemon restart with its
 ``created_at`` and ``session_id`` intact and stays resolvable through ``jarvis
 confirm``.  Without a ``store_path`` the manager is memory-only and touches no
 filesystem at all.
+
+**Offline decision queue:**
+
+Because the store is a plain file, ``jarvis confirm`` can read it with the
+daemon down.  Decisions made there are appended to
+``$JARVIS_DATA_DIR/confirmation_decisions.json`` as the same socket-protocol
+messages a live client would send, and the daemon replays them at startup
+(``runtime/lifecycle.apply_queued_confirmation_decisions``).  The queue file's
+protection is the same same-user filesystem boundary the local socket model
+relies on — see ``decision_queue_path()``.
 """
 
 import asyncio
@@ -160,6 +170,161 @@ class PendingConfirmation:
     created_at: float = field(default_factory=time.time)
 
 
+# ----------------------------------------------------------------------
+# On-disk locations (#224 store, and the offline decision queue built on it)
+# ----------------------------------------------------------------------
+
+STORE_FILENAME = "confirmations.json"
+DECISION_QUEUE_FILENAME = "confirmation_decisions.json"
+
+
+def store_path() -> Path:
+    """Where the daemon mirrors its pending list."""
+    return Path(Config.JARVIS_DATA_DIR) / STORE_FILENAME
+
+
+def decision_queue_path() -> Path:
+    """Where ``jarvis confirm`` parks decisions made while the daemon is off.
+
+    Security: this file carries the same authority as a message on the input
+    socket, and it is protected the same way — the same-user filesystem
+    boundary under ``JARVIS_DATA_DIR``. The daemon trusts a queued decision
+    exactly as far as it trusts a local same-user socket client, no further.
+    On Windows the analogue is the file's ACL, inherited from the data
+    directory (best-effort, as with the socket hardening there).
+
+    No explicit chmod is needed on POSIX: ``_atomic_write_json`` writes through
+    ``mkstemp`` (0600) and ``os.replace`` keeps the tmp file's mode.
+    """
+    return Path(Config.JARVIS_DATA_DIR) / DECISION_QUEUE_FILENAME
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    """Write ``payload`` to ``path`` via tmp + ``os.replace``.
+
+    A crash mid-write leaves the previous file intact rather than a half one.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+            f.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _read_store(path: Path) -> Dict[str, PendingConfirmation]:
+    """Parse a persisted pending list. Raises on an unreadable/corrupt file."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("store is not a list of confirmation records")
+    known = {f.name for f in fields(PendingConfirmation)}
+    restored: Dict[str, PendingConfirmation] = {}
+    for record in data:
+        if not isinstance(record, dict) or not record.get("request_id"):
+            continue
+        pending = PendingConfirmation(**{k: v for k, v in record.items() if k in known})
+        restored[pending.request_id] = pending
+    return restored
+
+
+def _summarize(p: PendingConfirmation) -> Dict[str, Any]:
+    """The per-entry shape every review surface (CLI, GUI socket) renders."""
+    return {
+        "id": p.request_id,
+        "tool_names": p.tool_names,
+        "tool_lines": p.tool_lines,
+        "created_at": p.created_at,
+        "session_id": p.session_id,
+    }
+
+
+def load_pending_summaries(path: Path) -> List[Dict[str, Any]]:
+    """``list_pending()`` straight off the store, with no manager involved.
+
+    ``jarvis confirm`` uses this when the daemon is unreachable: same records,
+    same summary shape, no notification channels and no restore-time logging
+    in the CLI's face.
+    """
+    if not path.exists():
+        return []
+    try:
+        return [_summarize(p) for p in _read_store(path).values()]
+    except Exception as e:
+        logger.warning("Could not read pending confirmations from %s: %s", path, e)
+        return []
+
+
+def _decision_key(decision: Dict[str, Any]) -> str:
+    """One decision per confirmation id; ``approve-all`` keys on its type."""
+    return str(decision.get("id") or decision.get("type", ""))
+
+
+def _quarantine(path: Path) -> Path:
+    """Park an unparseable file next to itself as ``.bad`` and report where.
+
+    Deleting it would destroy the only record of what the user decided, so a
+    corrupt queue is kept for inspection instead.
+    """
+    bad = path.with_name(path.name + ".bad")
+    path.replace(bad)
+    return bad
+
+
+def load_decision_queue(path: Path, quarantine: bool = False) -> List[Dict[str, Any]]:
+    """Read offline decisions in the order they were made; ``[]`` when absent.
+
+    ``quarantine`` is for callers that are about to replace the file (the
+    daemon consuming the queue, the CLI appending to it): a corrupt file is
+    renamed to ``<name>.bad`` first so it is never silently overwritten.
+    """
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError("decision queue is not a list")
+        return [d for d in data if isinstance(d, dict) and d.get("type")]
+    except Exception as e:
+        kept = ""
+        if quarantine:
+            try:
+                kept = f"; kept as {_quarantine(path)}"
+            except OSError:
+                pass
+        logger.warning("Unreadable confirmation decision queue %s: %s%s", path, e, kept)
+        return []
+
+
+def queue_decision(decision: Dict[str, Any], path: Path) -> bool:
+    """Append one socket-protocol decision message; returns True if it replaced.
+
+    Last writer wins per confirmation id: changing your mind about ``abc123``
+    rewrites that entry rather than queueing a second, contradictory one.
+    """
+    existing = load_decision_queue(path, quarantine=True)
+    key = _decision_key(decision)
+    queued = [d for d in existing if _decision_key(d) != key]
+    replaced = len(queued) != len(existing)
+    queued.append(decision)
+    _atomic_write_json(path, queued)
+    return replaced
+
+
+def clear_decision_queue(path: Path) -> None:
+    """Drop the queue file once every decision in it has been applied."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("Could not remove applied decision queue %s: %s", path, e)
+
+
 class ConfirmationManager:
     """Non-blocking, event-driven tool confirmation gate."""
 
@@ -202,19 +367,8 @@ class ConfirmationManager:
         if self._store_path is None or not self._store_path.exists():
             return
 
-        known = {f.name for f in fields(PendingConfirmation)}
         try:
-            data = json.loads(self._store_path.read_text(encoding="utf-8"))
-            if not isinstance(data, list):
-                raise ValueError("store is not a list of confirmation records")
-            restored: Dict[str, PendingConfirmation] = {}
-            for record in data:
-                if not isinstance(record, dict) or not record.get("request_id"):
-                    continue
-                pending = PendingConfirmation(
-                    **{k: v for k, v in record.items() if k in known}
-                )
-                restored[pending.request_id] = pending
+            restored = _read_store(self._store_path)
         except Exception as e:
             logger.warning(
                 "Could not read pending confirmations from %s: %s; starting empty",
@@ -249,22 +403,9 @@ class ConfirmationManager:
         if self._store_path is None:
             return
         try:
-            records = [asdict(p) for p in self._pending.values()]
-            self._store_path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(
-                dir=self._store_path.parent, prefix=".confirmations_"
+            _atomic_write_json(
+                self._store_path, [asdict(p) for p in self._pending.values()]
             )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(records, f, indent=2, ensure_ascii=False, default=str)
-                    f.write("\n")
-                os.replace(tmp, self._store_path)
-            except Exception:
-                try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
-                raise
         except Exception as e:
             logger.warning(
                 "Could not persist pending confirmations to %s: %s",
@@ -433,16 +574,7 @@ class ConfirmationManager:
         goal description via ``GoalManager`` (#192), this manager has no
         goal-tree access of its own.
         """
-        return [
-            {
-                "id": p.request_id,
-                "tool_names": p.tool_names,
-                "tool_lines": p.tool_lines,
-                "created_at": p.created_at,
-                "session_id": p.session_id,
-            }
-            for p in self._pending.values()
-        ]
+        return [_summarize(p) for p in self._pending.values()]
 
     def resolve(self, response: Dict[str, Any]) -> Optional[PendingConfirmation]:
         """Process a confirmation response and return the pending data.

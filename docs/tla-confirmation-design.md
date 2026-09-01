@@ -254,6 +254,71 @@ A missing, unreadable, or corrupt store logs a warning and starts empty rather
 than blocking startup.  Failing open on the *store* is safe: the gated tasks
 were never dispatched, so nothing runs without approval either way.
 
+### Offline decision queue
+
+Because the store is a plain file, `jarvis confirm` can review it with the
+daemon stopped.  It still prefers the input socket; an absent endpoint or a
+refused connection falls back to disk silently.  A failed *ownership* check
+prints its error first — a socket that is not ours is a security signal, not a
+stopped daemon — and then falls back too, because the queue is a same-user file
+that only our own daemon will read.
+
+Offline listing reads the store through `load_pending_summaries()` and renders
+it with `cli._print_confirmation_list()` — the same renderer the live path
+uses — plus already-queued decisions and one line:
+
+```
+daemon offline — decisions queue and apply at next start
+```
+
+A decision is appended to `$JARVIS_DATA_DIR/confirmation_decisions.json` as the
+*exact socket-protocol message* a live client would have sent:
+
+```json
+[
+  {"type": "approve_confirmation", "id": "abc123"},
+  {"type": "partial_approve_confirmation", "id": "batch", "approved_indices": [0, 2]}
+]
+```
+
+Written atomically (tmp + `os.replace`, as the store is).  One decision per
+confirmation id, last writer wins — changing your mind rewrites that entry
+instead of queueing a contradiction.  An id that is not in the store is
+refused (exit 1, nothing written); `approve-all` against an empty store prints
+`Nothing pending.` and writes nothing.
+
+```
+daemon stopped  → jarvis confirm            lists the store, notes it is offline
+                → jarvis confirm approve X  appends {"type": "approve_confirmation", "id": "X"}
+daemon start    → ConfirmationManager.__init__ restores the store
+                → lifecycle.apply_queued_confirmation_decisions()
+                  (right after set_event_injector; before and regardless of sockets)
+                  ├─ io.apply_confirmation_decision() per message — the SAME
+                  │  translation a live socket message gets, so approved_indices,
+                  │  approve-all expansion, the GUI broadcast and the goal-gone
+                  │  resume logging behave identically
+                  ├─ unknown / already-resolved id → resolve() warns, returns
+                  │  None, skipped
+                  └─ queue file deleted only AFTER the batch is injected
+                → INFO "applied N queued confirmation decision(s) from offline review"
+```
+
+Deleting last is deliberate: re-applying a consumed decision is a harmless
+warn-and-skip, so a crash mid-apply costs at most a repeated no-op, while
+deleting first would lose decisions outright.  A corrupt queue file is renamed
+to `confirmation_decisions.json.bad` and skipped rather than deleted, so the
+user can still see what they decided.
+
+**Security.**  The queue file carries the same authority as a message on the
+input socket and is protected the same way: the same-user filesystem boundary
+under `JARVIS_DATA_DIR`.  The daemon trusts a queued decision exactly as far as
+it trusts a local same-user socket client — no further, and the queue adds no
+new trust assumption.  Both files land at mode 0600 on POSIX without an
+explicit chmod, since the atomic write goes through `mkstemp` (0600) and
+`os.replace` keeps the tmp file's mode.  On Windows the analogue is the file's
+ACL, inherited from the data directory (best-effort, as with the `icacls`
+socket hardening there).
+
 ## Denial Flow
 
 When the user denies a tool:
@@ -306,8 +371,13 @@ The EventMerger supports five event types:
 | `jarvis/runtime/dispatch_flow.py` | `dispatch_send`: metadata lookup, `should_confirm` gating, `awaiting_confirmation` return |
 | `jarvis/runtime/root_handlers.py` | `on_confirmation_response`: resume dispatch, `USER_DENIAL`/`DISPATCH_RESULT` context |
 | `jarvis/core/component_factory.py` | Factory method for ConfirmationManager — wires the daemon's store path |
+| `jarvis/cli.py` | `jarvis confirm` — socket first, store + decision queue when the daemon is off |
+| `jarvis/runtime/io.py` | `apply_confirmation_decision()` — the one wire-protocol → event translation, shared by sockets and the startup replay |
+| `jarvis/runtime/lifecycle.py` | `apply_queued_confirmation_decisions()` — startup replay of the offline queue |
 
 ## Changelog — corrected claims
+
+*2026-09-01:* offline review added to Persistence (#224 follow-up). The section described a store the CLI could only reach through a running daemon — `jarvis confirm` exited 1 on an absent endpoint or a refused connect, so the restart-surviving queue was unreviewable between restarts. Added the "Offline decision queue" subsection: the socket-preferred fallback (and why a failed ownership check is not one), the queue file's protocol-identical contents and atomic last-writer-wins-per-id write, the startup replay through the shared `io.apply_confirmation_decision()`, delete-after-apply, `.bad` quarantine of a corrupt queue, and the same-user filesystem trust boundary it inherits from the socket model. Files table gains `jarvis/cli.py` and `jarvis/runtime/lifecycle.py`.
 
 *2026-09-01:* pending confirmations persist (#224). Principle 5 ("Persistent by default") described only a queryable in-process list; it is now backed by `$JARVIS_DATA_DIR/confirmations.json`, so the list survives a daemon restart, not just a channel going away. Added the Persistence section (store path, write-on-mutation points, restart lifecycle, fail-open on a corrupt store) and noted the store write in the flow diagram's step 1. A restored entry is a review-queue item: no notification, no timeout task.
 
