@@ -295,10 +295,17 @@ def request_stop(app: Any) -> None:
 def build_shutdown_snapshot(app: Any) -> Dict[str, Any]:
     """Final-state snapshot broadcast on shutdown_request (#146): current GUI
     state, still-unresolved goals, the active session id, and a timestamp."""
+    # Pending confirmations live only in memory and do not survive this
+    # shutdown (#224); tell any connected GUI how many are about to be lost so
+    # a client can surface it, rather than the requests just vanishing.
+    pending = (
+        app.confirmation.list_pending() if getattr(app, "confirmation", None) else []
+    )
     return {
         "state": app._gui_state,
         "goals": [g.to_context() for g in app.goals.get_active_goals()],
         "session_id": app.sessions.current_id if app.sessions else None,
+        "dropped_confirmations": len(pending),
         "timestamp": time.time(),
     }
 
@@ -330,6 +337,18 @@ async def shutdown(app: Any, logger: Logger) -> None:
     archived = app.goals.archive_all()
     if archived:
         logger.info(f"JARVIS: Archived {len(archived)} in-flight goal(s) on shutdown")
+    # Unlike goals, pending confirmations are not persisted (#224). They fail
+    # closed -- the held tasks were never dispatched -- but the request itself
+    # is lost, so say so loudly rather than dropping it in silence.
+    pending = (
+        app.confirmation.list_pending() if getattr(app, "confirmation", None) else []
+    )
+    if pending:
+        logger.warning(
+            f"JARVIS: {len(pending)} pending confirmation(s) dropped on shutdown "
+            f"(not persisted, #224) -- the gated tasks were never run: "
+            f"{', '.join(p['id'] for p in pending)}"
+        )
     app.output_manager.remove_output_callback(app._on_output_for_broadcast)
     app.output_manager.remove_output_callback(app._on_gui_output)
     await app.events.stop()

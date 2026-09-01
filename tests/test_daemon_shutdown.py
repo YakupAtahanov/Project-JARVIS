@@ -4,6 +4,7 @@ the DAEMON_SHUTDOWN broadcast + final-state snapshot, and voice-thread
 join-on-shutdown.
 """
 
+import logging
 import threading
 import time
 from types import SimpleNamespace
@@ -17,16 +18,19 @@ from jarvis.runtime import lifecycle as runtime_lifecycle
 _UNSET = object()
 
 
-def _make_app(gui_clients=None, goals=None, sessions=_UNSET):
+def _make_app(gui_clients=None, goals=None, sessions=_UNSET, pending=None):
     return SimpleNamespace(
         _gui_clients=gui_clients if gui_clients is not None else {},
         _gui_state="idle",
         goals=goals or Mock(get_active_goals=Mock(return_value=[])),
         sessions=Mock(current_id="sess-123") if sessions is _UNSET else sessions,
+        confirmation=Mock(list_pending=Mock(return_value=pending or [])),
         _running=True,
         events=Mock(),
         voice_manager=None,
         stop=Mock(),
+        _on_output_for_broadcast=Mock(),
+        _on_gui_output=Mock(),
     )
 
 
@@ -198,3 +202,76 @@ class TestJoinVoiceThreadIfRunning:
         thread.start()
         thread.join()
         runtime_lifecycle.join_voice_thread_if_running(thread)  # must not raise
+
+
+@pytest.mark.unit
+class TestDroppedConfirmationsOnShutdown:
+    """Pending confirmations are in-memory only and lost on shutdown (#224).
+    They fail closed, but the loss must be loud, not silent."""
+
+    def _pending(self, *ids):
+        return [
+            {
+                "id": i,
+                "tool_names": [],
+                "tool_lines": [],
+                "created_at": 0.0,
+                "session_id": None,
+            }
+            for i in ids
+        ]
+
+    def test_snapshot_reports_dropped_confirmation_count(self):
+        app = _make_app(pending=self._pending("c1", "c2"))
+        snapshot = runtime_lifecycle.build_shutdown_snapshot(app)
+        assert snapshot["dropped_confirmations"] == 2
+
+    def test_snapshot_count_is_zero_when_none_pending(self):
+        assert (
+            runtime_lifecycle.build_shutdown_snapshot(_make_app())[
+                "dropped_confirmations"
+            ]
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_shutdown_warns_loudly_when_confirmations_are_dropped(self, caplog):
+        app = _make_app(
+            goals=Mock(
+                get_active_goals=Mock(return_value=[]),
+                archive_all=Mock(return_value=[]),
+            ),
+            pending=self._pending("abc", "def"),
+        )
+        app.output_manager = Mock()
+        app.dispatch = AsyncMock()
+        app.events = AsyncMock()
+        app.contextor = None
+        with caplog.at_level(logging.WARNING):
+            await runtime_lifecycle.shutdown(app, logging.getLogger("test"))
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "confirmation" in r.message.lower()
+        ]
+        assert warnings, "a dropped confirmation must produce a WARNING"
+        assert "abc" in warnings[0].message and "def" in warnings[0].message
+        assert "#224" in warnings[0].message
+
+    @pytest.mark.asyncio
+    async def test_shutdown_is_silent_about_confirmations_when_none_pending(
+        self, caplog
+    ):
+        app = _make_app(
+            goals=Mock(
+                get_active_goals=Mock(return_value=[]),
+                archive_all=Mock(return_value=[]),
+            ),
+        )
+        app.output_manager = Mock()
+        app.dispatch = AsyncMock()
+        app.events = AsyncMock()
+        app.contextor = None
+        with caplog.at_level(logging.WARNING):
+            await runtime_lifecycle.shutdown(app, logging.getLogger("test"))
+        assert not [r for r in caplog.records if "confirmation" in r.message.lower()]
