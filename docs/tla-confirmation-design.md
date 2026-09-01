@@ -31,6 +31,8 @@ prevents it from misrepresenting the action.
    and socket), reviewable at any time rather than expiring on a clock.
    Auto-deny-on-timeout is opt-in (`CONFIRMATION_TIMEOUT` > 0) for
    unattended/headless setups that want the old fail-safe behavior back.
+   The list is persisted to disk, so it survives a daemon restart as well as
+   a channel going away (#224 — see Persistence below).
 
 ## Configuration
 
@@ -89,6 +91,7 @@ User: "delete my temp files"
     └─ Confirmation needed:
         │
         ├─ 1. Stash tasks in ConfirmationManager._pending
+        │      (and write the store, before notifying — #224)
         ├─ 2. Send notification (fire-and-forget):
         │       ├─ Desktop: notify-send runs as async subprocess
         │       ├─ Socket:  JSON broadcast to connected clients
@@ -212,6 +215,45 @@ Response injected via EventMerger when the user types y/N.
   Approve? [y/N]: _
 ```
 
+## Persistence
+
+`ConfirmationManager.__init__` takes an optional `store_path`.  The daemon's
+instance is built with `$JARVIS_DATA_DIR/confirmations.json`
+(`component_factory.create_confirmation_manager()`); a manager built without
+one is memory-only and performs no disk I/O.
+
+The store mirrors `_pending` — written atomically (tmp file +
+`os.replace`, the same shape as `core/constraint_store.py`) after the request
+that adds an entry and after the `resolve()` that pops it.  Those are the only
+two mutation points, so every channel, the GUI's `approve_all_confirmations`,
+and the opt-in auto-deny timer all land on the same write.  A write failure is
+logged, never raised: the dispatch gate must not fall over because a disk is
+full.
+
+The pending record is plain data — `request_id`, `tasks`, `approved_tasks`,
+`denied_tools`, `confirm_details`, `dispatch_context`, `session_id`,
+`fingerprint`, `tool_names`, `tool_lines`, `created_at`.  Timeout tasks live in
+a separate `_timeout_tasks` map and are never serialized.
+
+### Lifecycle across a restart
+
+```
+daemon stop     → goals archived (#146); _pending already on disk
+daemon start    → ConfirmationManager.__init__ loads the store
+                  ├─ entries keep created_at (CLI shows true age) and session_id
+                  ├─ NO notification is re-fired (the moment for a toast passed)
+                  └─ NO timeout task is armed, whatever CONFIRMATION_TIMEOUT says
+`jarvis confirm` → the restored entry is listed like any other
+approve         → resolve() → on_confirmation_response → tasks dispatched
+                  └─ the owning goal is gone (archived at shutdown), so
+                     link_tasks/link_dispatch_* no-op and the resume path
+                     logs "resumed without goal …; dispatched unlinked"
+```
+
+A missing, unreadable, or corrupt store logs a warning and starts empty rather
+than blocking startup.  Failing open on the *store* is safe: the gated tasks
+were never dispatched, so nothing runs without approval either way.
+
 ## Denial Flow
 
 When the user denies a tool:
@@ -256,15 +298,17 @@ The EventMerger supports five event types:
 
 | File | Purpose |
 |---|---|
-| `jarvis/core/confirmation_manager.py` | Non-blocking confirmation gate, notification channels, pending queue |
+| `jarvis/core/confirmation_manager.py` | Non-blocking confirmation gate, notification channels, pending queue + its store (#224) |
 | `jarvis/core/threat_level.py` | `ThreatLevel` enum + `classify()` — host floor, manifest level, payload scan |
 | `jarvis/dispatch/event_merger.py` | `CONFIRMATION_RESPONSE` event type, `inject_confirmation_response()` |
 | `jarvis/config.py` | `CONFIRMATION_MODE`, `NOTIFICATION_SILENT`, `CONFIRMATION_TIMEOUT` |
 | `jarvis/main.py` | Thin delegates for `_on_confirmation_response()` / `_dispatch_send()`, event wiring |
 | `jarvis/runtime/dispatch_flow.py` | `dispatch_send`: metadata lookup, `should_confirm` gating, `awaiting_confirmation` return |
 | `jarvis/runtime/root_handlers.py` | `on_confirmation_response`: resume dispatch, `USER_DENIAL`/`DISPATCH_RESULT` context |
-| `jarvis/core/component_factory.py` | Factory method for ConfirmationManager |
+| `jarvis/core/component_factory.py` | Factory method for ConfirmationManager — wires the daemon's store path |
 
 ## Changelog — corrected claims
+
+*2026-09-01:* pending confirmations persist (#224). Principle 5 ("Persistent by default") described only a queryable in-process list; it is now backed by `$JARVIS_DATA_DIR/confirmations.json`, so the list survives a daemon restart, not just a channel going away. Added the Persistence section (store path, write-on-mutation points, restart lifecycle, fail-open on a corrupt store) and noted the store write in the flow diagram's step 1. A restored entry is a review-queue item: no notification, no timeout task.
 
 *2026-07-22:* smart mode described as the TLA classifier (max of host floor, manifest `threat_level`, payload scan) — tool authors can raise but never lower the level; `threat_level` metadata field documented, `confirmation_required` marked legacy; TUI modal added as the highest-priority channel; desktop notification shows the rendered command and batches produce per-task notifications; socket protocol updated with `index`/`command` details and the `approved_indices` response shape; `DISPATCH_SIGNAL_BATCH` event added (#189); files table updated to the current module split.

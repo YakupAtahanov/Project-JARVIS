@@ -182,9 +182,15 @@ class ComponentFactory:
 
     @staticmethod
     def create_confirmation_manager() -> ConfirmationManager:
-        """Create ConfirmationManager for TLA confirmation gates."""
+        """Create ConfirmationManager for TLA confirmation gates.
+
+        The daemon's manager is backed by a store so pending confirmations
+        survive a restart (#224); a bare ``ConfirmationManager()`` stays
+        memory-only.
+        """
         logger.info("Initiating Confirmation manager...")
-        return ConfirmationManager()
+        store = os.path.join(Config.JARVIS_DATA_DIR, "confirmations.json")
+        return ConfirmationManager(store_path=store)
 
     @staticmethod
     def create_tts_optional() -> Optional[any]:

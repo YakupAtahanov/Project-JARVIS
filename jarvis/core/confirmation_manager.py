@@ -32,14 +32,26 @@ The global ``CONFIRMATION_MODE`` (config) controls overall behaviour:
 * ``allow_all``  — skip confirmation, always approve
 * ``smart``      — only ask when the tool sets ``confirmation_required``
 * ``ask_all``    — ask for every tool call regardless of metadata
+
+**Persistence (#224):**
+
+When constructed with a ``store_path`` the pending list is mirrored to that
+JSON file on every mutation (atomic tmp + ``os.replace``) and restored at
+construction, so a confirmation survives a daemon restart with its
+``created_at`` and ``session_id`` intact and stays resolvable through ``jarvis
+confirm``.  Without a ``store_path`` the manager is memory-only and touches no
+filesystem at all.
 """
 
 import asyncio
 import json
+import os
 import sys
+import tempfile
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import Config
@@ -151,9 +163,13 @@ class PendingConfirmation:
 class ConfirmationManager:
     """Non-blocking, event-driven tool confirmation gate."""
 
-    def __init__(self) -> None:
+    def __init__(self, store_path: Optional[str] = None) -> None:
         # Pending confirmations keyed by request id.
         self._pending: Dict[str, PendingConfirmation] = {}
+        # None = memory-only: no restore, no writes, no filesystem contact.
+        self._store_path: Optional[Path] = (
+            Path(store_path).expanduser() if store_path else None
+        )
         # External output callback (set by Jarvis to broadcast via socket).
         self._output_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         self._has_socket_clients: Optional[Callable[[], bool]] = None
@@ -163,6 +179,98 @@ class ConfirmationManager:
         self._timeout_tasks: Dict[str, asyncio.Task] = {}
         # TUI callback — async callable that pushes ConfirmModal and returns bool.
         self._tui_callback: Optional[Callable[[str, List[str]], Any]] = None
+        self._restore()
+
+    # ------------------------------------------------------------------
+    # Persistence (#224)
+    # ------------------------------------------------------------------
+
+    def _restore(self) -> None:
+        """Load the persisted pending list at startup.
+
+        Restored entries are review-queue items, not live requests: no channel
+        notification is re-fired (the moment for a toast has passed) and no
+        timeout task is armed for them regardless of ``CONFIRMATION_TIMEOUT``,
+        since a clock started before the restart would fire on an arbitrary
+        remainder. They simply appear in ``list_pending()`` for CLI/GUI review
+        with their original ``created_at`` and ``session_id``.
+
+        Fails open: an absent, unreadable, or corrupt store logs a warning and
+        starts empty rather than blocking startup. Nothing is lost that could
+        run unapproved — the gated tasks were never dispatched.
+        """
+        if self._store_path is None or not self._store_path.exists():
+            return
+
+        known = {f.name for f in fields(PendingConfirmation)}
+        try:
+            data = json.loads(self._store_path.read_text(encoding="utf-8"))
+            if not isinstance(data, list):
+                raise ValueError("store is not a list of confirmation records")
+            restored: Dict[str, PendingConfirmation] = {}
+            for record in data:
+                if not isinstance(record, dict) or not record.get("request_id"):
+                    continue
+                pending = PendingConfirmation(
+                    **{k: v for k, v in record.items() if k in known}
+                )
+                restored[pending.request_id] = pending
+        except Exception as e:
+            logger.warning(
+                "Could not read pending confirmations from %s: %s; starting empty",
+                self._store_path,
+                e,
+            )
+            return
+
+        self._pending = restored
+        if restored:
+            logger.info(
+                "Restored %d pending confirmation(s) from %s",
+                len(restored),
+                self._store_path,
+            )
+
+    def _persist(self) -> None:
+        """Mirror ``_pending`` to the store after every mutation.
+
+        Written atomically so a crash mid-write never leaves a half-file. A
+        write failure is logged, not raised: the in-memory list is still
+        correct and the dispatch gate must not fall over because a disk is
+        full.
+
+        Every ``PendingConfirmation`` field is plain data (the runtime-only
+        timeout tasks live in ``_timeout_tasks``, never here), but tool params
+        arrive from an LLM-parsed payload, so an exotic value falls back to its
+        string form rather than aborting the write — a resolve whose write
+        aborted would leave the store claiming a confirmation that no longer
+        exists.
+        """
+        if self._store_path is None:
+            return
+        try:
+            records = [asdict(p) for p in self._pending.values()]
+            self._store_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(
+                dir=self._store_path.parent, prefix=".confirmations_"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(records, f, indent=2, ensure_ascii=False, default=str)
+                    f.write("\n")
+                os.replace(tmp, self._store_path)
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+        except Exception as e:
+            logger.warning(
+                "Could not persist pending confirmations to %s: %s",
+                self._store_path,
+                e,
+            )
 
     # ------------------------------------------------------------------
     # Setup
@@ -287,6 +395,9 @@ class ConfirmationManager:
             confirm_details=list(tools_needing_confirmation),
         )
         self._pending[request_id] = pending
+        # Persist before notifying: a crash between the two must leave the
+        # request reviewable, not lost.
+        self._persist()
 
         logger.info(
             "Confirmation requested (non-blocking): id=%s, tools=%s",
@@ -357,6 +468,7 @@ class ConfirmationManager:
             return None
 
         pending = self._pending.pop(req_id)
+        self._persist()
 
         # Cancel the timeout task.
         timeout_task = self._timeout_tasks.pop(req_id, None)
