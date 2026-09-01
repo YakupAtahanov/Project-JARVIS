@@ -103,14 +103,23 @@ confirm` (CLI) or `list_confirmations`/`approve_confirmation`/
 `deny_confirmation`/`partial_approve_confirmation`/
 `approve_all_confirmations` (GUI socket) rather than expiring on a clock.
 `CONFIRMATION_TIMEOUT` defaults to `0` (disabled); set it > 0 to restore
-auto-deny for unattended/headless setups. **The list lives only in the
-daemon's memory** (`_pending`, no disk I/O): it outlives any single
-channel — dismissing a desktop toast is never a deny (#185) — but it does
-NOT survive a daemon restart, and it is not partitioned by session (each
-entry records a `session_id` for display only). On shutdown, goals are
-archived (#146) while the confirmations gating them are dropped silently;
-the held tasks were never dispatched, so this fails closed, but the
-request is lost. Tracked as a gap, not a design decision.
+auto-deny for unattended/headless setups. The list outlives any single
+channel — dismissing a desktop toast is never a deny (#185) — **and it
+survives a daemon restart** (#224): the daemon's manager is built with a
+store path (`$JARVIS_DATA_DIR/confirmations.json`, wired in
+`component_factory`), mirrors `_pending` to it atomically on every mutation,
+and reloads it at construction. Restored entries keep their `created_at` (so
+the CLI shows true age) and `session_id`, fire no notification on any channel,
+and arm no timeout task — they are a review queue for `jarvis confirm` / the GUI
+socket, resolvable through the same `resolve()` path as a live request. A
+missing, unreadable, or corrupt store logs a warning and starts empty rather
+than blocking startup; that fails closed, since the gated tasks were never
+dispatched. The list is still not partitioned by session (each entry records
+a `session_id` for display and for re-scoping the resume dispatch). Because
+goals are archived at shutdown (#146), a confirmation approved after a
+restart dispatches with its goal gone: goal-linking logs and no-ops, the
+tasks still run. A `ConfirmationManager()` built with no store path is
+memory-only and performs no disk I/O at all (the test suite's default).
 
 ### Socket Security
 
@@ -223,7 +232,7 @@ make check                  # Format + lint + typecheck + tests
 | `jarvis/tui/confirm_modal.py` | Tool confirmation modal |
 | `jarvis/tui/config_modal.py` | Tabbed config/provider settings modal (F2 / /settings) |
 | `jarvis/tui/provider_modal.py` | Provider add/edit modal |
-| `jarvis/core/confirmation_manager.py` | Multi-channel confirmation gate |
+| `jarvis/core/confirmation_manager.py` | Multi-channel confirmation gate; pending list persisted to `$JARVIS_DATA_DIR/confirmations.json` when built with a store path (#224) |
 | `jarvis/core/constraint_store.py` | Standing path-prefix deny constraints (#214), enforced in `dispatch_flow` ahead of the confirmation mode |
 | `jarvis/core/socket_security.py` | Socket hardening |
 | `jarvis/core/sudo_manager.py` | `jarvis sudo` — sudoers drop-in management (#158) |
@@ -251,6 +260,8 @@ make check                  # Format + lint + typecheck + tests
 ---
 
 ## Changelog — corrected claims
+
+*2026-09-01:* the pending-confirmations list is no longer memory-only (#224). The Confirmation Channels paragraph above said it "lives only in the daemon's memory ... does NOT survive a daemon restart ... Tracked as a gap, not a design decision" — the gap is now closed. `ConfirmationManager.__init__` takes an optional `store_path`; the daemon's instance gets `$JARVIS_DATA_DIR/confirmations.json` from `component_factory.create_confirmation_manager()`, and `_pending` is mirrored there (atomic tmp + `os.replace`, modelled on `constraint_store.py`) after the request that adds an entry and after the `resolve()` that pops it — the only two mutation points, so every channel and the auto-deny timer flow through them. Restore happens in the constructor: entries come back with `created_at`/`session_id` intact, fire no notification, and arm no timeout task regardless of `CONFIRMATION_TIMEOUT` (a clock started before the restart would fire on an arbitrary remainder), so a restored item is a review-queue entry for `jarvis confirm`/GUI. A corrupt or unreadable store warns and starts empty. Approving a restored entry resumes through `root_handlers.on_confirmation_response` as before, except the owning goal was archived at shutdown (#146) — `link_tasks`/`link_dispatch_fingerprint`/`link_dispatch_servers` were already no-ops for a missing goal; the resume path now logs that once instead of leaving "dispatched unlinked" invisible. A bare `ConfirmationManager()` is unchanged and writes nothing, which is what every existing test uses.
 
 *2026-08-15:* socket-security bullet corrected — `verify_socket_ownership()` has no callers; the live pre-connect ownership check is `platform.ipc_verify_owner()` called directly from `cli.py`. Key Files gains `jarvis/core/constraint_store.py` (#214), which was shipped but undocumented here.
 

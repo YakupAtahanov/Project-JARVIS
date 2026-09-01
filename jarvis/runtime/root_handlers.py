@@ -363,6 +363,17 @@ async def on_confirmation_response(
 
             pids = _extract_pids_from_result(result)
             if pids:
+                if app.goals.get_goal(pending.session_id) is None:
+                    # A confirmation persisted across a restart outlives its
+                    # goal — goals are archived at shutdown (#146). The tasks
+                    # are already dispatched; every link_* below is a no-op for
+                    # a missing goal, so say so once and carry on (#224).
+                    logger.info(
+                        "Confirmation %s resumed without goal %s "
+                        "(archived across a restart); dispatched unlinked",
+                        pending.request_id,
+                        pending.session_id,
+                    )
                 app.goals.link_tasks(pending.session_id, pids)
                 # Per-PID server attribution over the APPROVED subset — the only
                 # tasks that actually ran. Keeping this separate from the
