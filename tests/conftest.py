@@ -15,6 +15,13 @@ import pytest
 # platform layer honors this ahead of backend detection.
 os.environ["JARVIS_DISABLE_NOTIFICATIONS"] = "1"
 
+# Same defect class, filesystem edition (#231): the suite must never write
+# into the real ~/.local/share/jarvis. Config reads JARVIS_DATA_DIR at import
+# time and conftest imports before any test module, so pointing it at a
+# per-run temp dir here keeps GoalManager archives (and anything else
+# data-dir-relative) off the user's machine.
+os.environ["JARVIS_DATA_DIR"] = tempfile.mkdtemp(prefix="jarvis-test-data-")
+
 
 @pytest.fixture
 def temp_env_file():
