@@ -98,9 +98,13 @@ tui = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
+    # Formatter/linter majors are capped: an unpinned bump (isort 9.0.0)
+    # reformatted a file no PR had touched and turned every PR's lint job
+    # red against a green main. Raise a cap deliberately, running the tool
+    # over the tree in the same commit, rather than have CI drift under us.
+    "black>=23.0.0,<27",
+    "isort>=5.12.0,<9",
+    "flake8>=6.0.0,<8",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
 ]
